@@ -520,6 +520,13 @@ async function boot() {
   if (!data.session) renderAuth();
   setInterval(async () => { if (user && !editing) { await loadAll(); if (tab !== "settings") render(); checkDue(); } }, 30000);
   window.addEventListener("hashchange", handleHash);
+  // 서비스워커가 푸시를 받았을 때 — 앱이 열려 있으면 여기서도 소리·진동·깜빡임 (2026-09-15 대표님 요청 "진동과 소리 같이")
+  if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", async (e) => {
+    if (!e.data || e.data.type !== "alarm" || !user) return;
+    await loadAll();
+    const it = items.find((x) => x.id === e.data.item_id);
+    if (it && !ringing.has(it.id)) showAlarm(it); else { beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); }
+  });
   document.addEventListener("visibilitychange", () => { if (!document.hidden && user) { loadAll().then(() => { render(); checkDue(); }); } });
 }
 boot();
