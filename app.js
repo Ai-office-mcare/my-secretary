@@ -66,13 +66,21 @@ function renderAuth(msg = "") {
     </div>`;
   $("#login").onclick = async () => {
     const { error } = await sb.auth.signInWithPassword({ email: $("#email").value.trim(), password: $("#pw").value });
-    if (error) renderAuth("로그인하지 못했습니다: " + error.message);
+    if (error) renderAuth(/invalid/i.test(error.message) ? "이메일 또는 비밀번호가 맞지 않습니다." : "로그인하지 못했습니다: " + error.message);
   };
   $("#signup").onclick = async () => {
     const email = $("#email").value.trim(), password = $("#pw").value;
     if (!email || password.length < 6) return renderAuth("이메일과 6자 이상 비밀번호를 넣어 주세요.");
     const { error } = await sb.auth.signUp({ email, password });
-    if (error) return renderAuth("계정을 만들지 못했습니다: " + error.message);
+    if (error) {
+      // ★ 이미 만든 계정이면(한 번 더 눌렀을 때) 만들지 않고 바로 로그인해 봅니다 (2026-09-15 실제로 있었던 일)
+      if (/already|exist|registered/i.test(error.message)) {
+        const r0 = await sb.auth.signInWithPassword({ email, password });
+        if (!r0.error) return;
+        return renderAuth("이 이메일로 이미 계정이 있습니다. 처음 정한 비밀번호로 [로그인] 을 눌러 주세요. (비밀번호가 다르면 로그인이 안 됩니다)");
+      }
+      return renderAuth("계정을 만들지 못했습니다: " + error.message);
+    }
     const r = await sb.auth.signInWithPassword({ email, password });
     if (r.error) renderAuth("계정은 만들었지만 로그인하지 못했습니다: " + r.error.message);
   };
