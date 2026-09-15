@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>내 비서</title>
+  <meta name="theme-color" content="#b45309" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="내 비서" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>내 비서</h1>
+      <div class="sub" id="sub">업무지시 · 알람 · 캘린더 · 일기장</div>
+    </div>
+    <div class="row" id="top-right"></div>
+  </header>
+
+  <main id="main">
+    <p class="muted">불러오는 중...</p>
+  </main>
+
+  <nav class="tabs" id="tabs" hidden>
+    <button data-tab="cal"><span class="ic">▦</span>캘린더</button>
+    <button data-tab="todo"><span class="ic">☑</span>할 일</button>
+    <button data-tab="diary"><span class="ic">✎</span>일기</button>
+    <button data-tab="settings"><span class="ic">⚙</span>설정</button>
+  </nav>
+
+  <div id="alarm-modal" class="alarm-modal hidden"></div>
+  <audio id="ding" preload="auto"></audio>
+
+  <script src="config.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
