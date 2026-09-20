@@ -3,8 +3,8 @@
  * · 알림을 누르면 그 알람 카드로 앱을 엽니다
  * · 화면 파일은 네트워크 우선, 안 되면 저장본 (오프라인에서도 열림)
  */
-const CACHE = "sec-v2";
-const FILES = ["./", "./index.html", "./style.css", "./app.js", "./config.js", "./manifest.json", "./icon.svg"];
+const CACHE = "sec-v3";
+const FILES = ["./", "./index.html", "./style.css", "./app.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES).catch(() => null)));
@@ -63,7 +63,7 @@ self.addEventListener("push", (e) => {
       self.registration.showNotification(title, options),
       // 앱이 열려 있으면 앱 안에서도 소리·진동·깜빡임을 냅니다 (알림 소리가 꺼진 휴대폰이라도 앱 소리는 남)
       self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-        for (const c of list) c.postMessage({ type: "alarm", item_id: data.item_id || null, title, body: options.body });
+        for (const c of list) c.postMessage({ type: "alarm", item_id: data.item_id || null, title, body: options.body, ring: data.ring || 1 });
       }),
     ]),
   );

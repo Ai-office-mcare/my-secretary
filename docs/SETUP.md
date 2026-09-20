@@ -50,3 +50,10 @@ npx --yes supabase@latest functions deploy sec-send-alarms --project-ref nadsald
 - 알람 정확도 1분 · 웹 푸시는 안드로이드 크롬 기준(아이폰은 홈 화면에 추가한 뒤) · 푸시 알림음은 기기 기본음
 - Supabase 무료 프로젝트는 1주일 무활동이면 잠들지만, 1분 시계가 돌아 잠들지 않습니다
 - 가입이 열려 있어 주소를 아는 사람은 계정을 만들 수 있습니다(자료는 서로 안 보임). 닫으려면 Authentication → disable signup
+
+## 시험
+
+```
+node --test tests/
+```
+알람 계산(다음 회차 · 5분 반복 · 완료/마감 동작) 13개. 서버 함수를 고쳤으면 `functions deploy` 전에 돌린다.

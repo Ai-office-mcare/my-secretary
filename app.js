@@ -13,6 +13,8 @@ const sb = createClient(CFG.supabaseUrl, CFG.supabaseAnonKey);
 const $ = (s, el = document) => el.querySelector(s);
 const main = $("#main");
 const tabs = $("#tabs");
+import { RING_SECONDS, afterAction } from "./supabase/functions/sec-send-alarms/plan.js";
+
 const REPEAT_NAMES = { none: "반복 없음", daily: "매일", weekdays: "평일(월~금)", weekly: "매주", monthly: "매월" };
 const STATUS_NAMES = { todo: "예정", doing: "진행 중", done: "완료", closed: "마감" };
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
@@ -454,15 +456,24 @@ function beep() {
     play(ctx.currentTime); play(ctx.currentTime + 0.5); play(ctx.currentTime + 1.0);
   } catch { /* 소리를 못 내는 환경 */ }
 }
-function startFlash() { document.body.classList.add("flash"); clearInterval(flashTimer); flashTimer = setInterval(() => { beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); }, 4000); beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); }
-function stopFlash() { document.body.classList.remove("flash"); clearInterval(flashTimer); flashTimer = null; }
+// ★ 알람시계 방식 (2026-09-20): 한 번에 20초 울리고 멈춥니다. 처리하지 않으면 서버가 5분 뒤 다시 보내고, 그때 또 20초.
+let flashStop = null;
+function startFlash() {
+  document.body.classList.add("flash");
+  clearInterval(flashTimer); clearTimeout(flashStop);
+  const ring = () => { beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); };
+  ring();
+  flashTimer = setInterval(ring, 3000);
+  flashStop = setTimeout(stopFlash, RING_SECONDS * 1000);
+}
+function stopFlash() { document.body.classList.remove("flash"); clearInterval(flashTimer); clearTimeout(flashStop); flashTimer = null; }
 
-function showAlarm(it, fromPush = false) {
+function showAlarm(it, fromPush = false, ring = 1) {
   ringing.add(it.id);
   const box = $("#alarm-modal");
   box.classList.remove("hidden");
   box.innerHTML = `<div class="box">
-    <h2>⏰ ${esc(it.title)}</h2>
+    <h2>⏰ ${esc(it.title)}${ring > 1 ? ` <small>(${ring}번째 알림)</small>` : ""}</h2>
     <div class="m">${esc(it.memo || whenText(it.due_at))}</div>
     <div class="btns">
       <button class="btn" data-a="done">완료</button>
@@ -470,7 +481,7 @@ function showAlarm(it, fromPush = false) {
       <button class="btn ghost" data-a="closed">마감</button>
       <button class="btn ghost" data-a="later">1시간 뒤 다시</button>
     </div>
-    <p class="muted" style="margin:10px 0 0">${fromPush ? "알림에서 열었습니다." : "지금 시각이 되어 울립니다."}</p>
+    <p class="muted" style="margin:10px 0 0">${fromPush ? "알림에서 열었습니다." : "지금 시각이 되어 울립니다."} 완료·마감·날짜 바꾸기를 안 하면 <b>5분마다</b> 다시 울립니다 (최대 1시간).</p>
   </div>`;
   if (!fromPush) startFlash();
   box.onclick = async (e) => {
@@ -478,13 +489,16 @@ function showAlarm(it, fromPush = false) {
     const a = b.dataset.a;
     try {
       if (a === "doing") { stopFlash(); return openSnooze(it, true); }
-      if (a === "later") await updateItem(it.id, { due_at: new Date(Date.now() + 3600000).toISOString(), status: "doing" });
-      else await updateItem(it.id, { status: a });
-      box.classList.add("hidden"); stopFlash();
-      await loadAll(); render(); toast("처리했습니다.");
+      // ★ 반복 알람의 [완료] 는 "오늘 것 끝" — 다음 회차로 넘기고 계속 예정 (plan.js afterAction)
+      const patch = afterAction(a, it, new Date());
+      await updateItem(it.id, patch);
+      box.classList.add("hidden"); stopFlash(); ringing.delete(it.id);
+      await loadAll(); render();
+      toast(a === "done" && patch.status === "todo" ? "완료. 다음은 " + whenText(patch.due_at) + " 에 울립니다." : "처리했습니다.");
     } catch (err) { toast("처리하지 못했습니다: " + err.message, "bad"); }
   };
 }
+const rungFor = {}; // id → 마지막으로 울린 서버 발송 시각 (5분마다 다시 울리기 위해)
 async function checkDue() {
   if (!user) return;
   const now = Date.now();
@@ -492,7 +506,14 @@ async function checkDue() {
     if (!it.due_at || it.notify === false || (it.status !== "todo" && it.status !== "doing")) continue;
     const t = new Date(it.due_at).getTime();
     // 지금 시각 ±5분 안에 든 것만 울립니다 (오래 지난 것은 목록의 '지난 일정' 으로)
-    if (t <= now && now - t < 5 * 60000 && !ringing.has(it.id)) { showAlarm(it); return; }
+    if (t <= now && now - t < 5 * 60000 && !ringing.has(it.id)) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it); return; }
+    // ★ 서버가 다시 울렸으면(5분마다) 푸시가 안 오는 기기(PC 등)에서도 여기서 다시 웁니다.
+    const fired = it.last_fired_at ? new Date(it.last_fired_at).getTime() : 0;
+    if (fired && now - fired < 90000 && rungFor[it.id] !== it.last_fired_at) {
+      rungFor[it.id] = it.last_fired_at;
+      const ring = Math.max(1, Math.round((now - t) / (5 * 60000)) + 1);
+      showAlarm(it, false, ring); return;
+    }
   }
 }
 async function handleHash() {
@@ -502,8 +523,8 @@ async function handleHash() {
   await loadAll();
   const it = items.find((x) => x.id === m[1]);
   if (!it) return;
-  if (m[2] === "done") { await updateItem(it.id, { status: "done" }); await loadAll(); render(); return toast("완료로 표시했습니다."); }
-  if (m[2] === "snooze") { await updateItem(it.id, { due_at: new Date(Date.now() + 3600000).toISOString(), status: "doing" }); await loadAll(); render(); return toast("1시간 뒤로 미뤘습니다."); }
+  if (m[2] === "done") { const p = afterAction("done", it, new Date()); await updateItem(it.id, p); await loadAll(); render(); return toast(p.status === "todo" ? "완료. 다음은 " + whenText(p.due_at) + " 에 울립니다." : "완료로 표시했습니다."); }
+  if (m[2] === "snooze") { await updateItem(it.id, afterAction("later", it, new Date())); await loadAll(); render(); return toast("1시간 뒤로 미뤘습니다."); }
   showAlarm(it, true);
 }
 
@@ -525,7 +546,8 @@ async function boot() {
     if (!e.data || e.data.type !== "alarm" || !user) return;
     await loadAll();
     const it = items.find((x) => x.id === e.data.item_id);
-    if (it && !ringing.has(it.id)) showAlarm(it); else { beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); }
+    if (it) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it, false, e.data.ring || 1); } // 이미 떠 있어도 다시 20초 웁니다 (N번째)
+    else { beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); }
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden && user) { loadAll().then(() => { render(); checkDue(); }); } });
 }
