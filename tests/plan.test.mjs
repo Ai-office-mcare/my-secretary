@@ -94,3 +94,11 @@ test("긴 진동 — 20초를 채우는 징·징·징 무늬", () => {
   assert.ok(total >= 19_000 && total <= 21_000, String(total));
   assert.ok(v.length % 2 === 1); // 진동으로 시작해 진동으로 끝
 });
+
+test("한 번 울릴 때 6초 간격으로 4번 연달아 보내 20초를 채운다 (휴대폰은 알림 한 번에 한 번만 울리므로)", async () => {
+  const { pulseDelays, RING_PULSES, PULSE_GAP_MS } = await import("../supabase/functions/sec-send-alarms/plan.js");
+  assert.equal(RING_PULSES, 4);
+  assert.equal(PULSE_GAP_MS, 6000);
+  assert.deepEqual(pulseDelays(), [0, 6000, 12000, 18000]);
+  assert.ok(pulseDelays().at(-1) + 2000 <= RING_SECONDS * 1000);
+});

@@ -546,6 +546,8 @@ async function boot() {
     if (!e.data || e.data.type !== "alarm" || !user) return;
     await loadAll();
     const it = items.find((x) => x.id === e.data.item_id);
+    // 서버는 한 번 울릴 때 6초 간격으로 4번 보냅니다(휴대폰용). 앱은 첫 번째에만 20초 울림을 시작하고 나머지는 무시합니다.
+    if ((e.data.pulse || 1) > 1 && it && ringing.has(it.id)) return;
     if (it) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it, false, e.data.ring || 1); } // 이미 떠 있어도 다시 20초 웁니다 (N번째)
     else { beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); }
   });

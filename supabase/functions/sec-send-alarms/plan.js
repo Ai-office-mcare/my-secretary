@@ -100,3 +100,12 @@ export function longVibrate() {
   out.push(400);
   return out;
 }
+
+// ★ 2026-09-20 저녁 — 휴대폰 알림은 한 번에 "띠링·진동 한 번" 뿐이라(긴 진동 무늬는 안드로이드 크롬이 무시)
+//   20초 동안 이어지게 하려면 같은 알림을 몇 초 간격으로 **여러 번** 보내야 합니다. 같은 tag + renotify 라
+//   알림이 늘어나지 않고 소리·진동만 다시 납니다.
+export const RING_PULSES = 4;
+export const PULSE_GAP_MS = 6000;
+export function pulseDelays() {
+  return Array.from({ length: RING_PULSES }, (_, i) => i * PULSE_GAP_MS);
+}

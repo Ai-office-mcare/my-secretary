@@ -14,7 +14,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
-import { NAG_MAX, longVibrate, planAfterFire, ringCount } from "./plan.js";
+import { NAG_MAX, RING_PULSES, longVibrate, planAfterFire, pulseDelays, ringCount } from "./plan.js";
 
 const KST_OFFSET_MIN = 9 * 60;
 const MAX_PER_RUN = 50;
@@ -71,8 +71,9 @@ Deno.serve(async (req) => {
   const vapidKeys = await webpush.importVapidKeys(JSON.parse(vapidJson), { extractable: false });
   const app = await webpush.ApplicationServer.new({ contactInformation: subject, vapidKeys });
 
-  let fired = 0;
-  const results: unknown[] = [];
+  // ── 1) 보낼 것 준비 + 표 갱신 (울리기 **전에** 다음 시각을 적어 두어, 도중에 끊겨도 다음 분에 겹쳐 울리지 않게)
+  type Job = { item: Item; subs: Sub[]; rings: number; body: Record<string, unknown>; plan: ReturnType<typeof planAfterFire>; alive: Set<string>; detail: string[] };
+  const jobs: Job[] = [];
   for (const item of items as Item[]) {
     const { data: subs } = await db
       .from("sec_push_subscriptions")
@@ -89,7 +90,7 @@ Deno.serve(async (req) => {
     const when = kstText(new Date(item.due_at ?? item.next_fire_at));
     const nth = rings > 1 ? ` (${rings}번째 알림)` : "";
 
-    const payload = JSON.stringify({
+    const body = {
       title: item.title + nth,
       // ★ 잠금화면에서도 할 일·언제·세부내용이 다 보이게 (2026-09-20 대표님 요청). 메모는 줄바꿈으로 그대로.
       body: `${when}${item.memo ? "\n" + item.memo : ""}\n${rings < NAG_MAX ? "완료·마감·날짜 바꾸기를 안 하면 5분 뒤 다시 울립니다" : "마지막 알림입니다"}`,
@@ -98,31 +99,7 @@ Deno.serve(async (req) => {
       vibrate: longVibrate(),
       ring: rings,
       url: `#alarm=${item.id}`,
-    });
-
-    let sent = 0;
-    const detail: string[] = [];
-    for (const s of (subs ?? []) as Sub[]) {
-      try {
-        const subscriber = app.subscribe({
-          endpoint: s.endpoint,
-          keys: { p256dh: s.p256dh, auth: s.auth },
-        });
-        // ttl 5분 — 5분마다 다시 울리므로 늦게 도착한 옛 알림이 겹쳐 오지 않게
-        await subscriber.pushTextMessage(payload, { ttl: 5 * 60, urgency: webpush.Urgency.High });
-        sent++;
-        await db.from("sec_push_subscriptions").update({ last_ok_at: now.toISOString(), fail_count: 0 }).eq("id", s.id);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        detail.push(msg.slice(0, 120));
-        const gone = /410|404|not found|gone|expired/i.test(msg);
-        if (gone || s.fail_count >= 5) {
-          await db.from("sec_push_subscriptions").delete().eq("id", s.id);
-        } else {
-          await db.from("sec_push_subscriptions").update({ fail_count: s.fail_count + 1 }).eq("id", s.id);
-        }
-      }
-    }
+    };
 
     // ★ 알람시계 방식 — 처리가 없으면 5분 뒤 다시. 12번째면 그만(반복은 다음 회차로).
     const plan = planAfterFire(now, item, rings);
@@ -130,15 +107,58 @@ Deno.serve(async (req) => {
       .from("sec_items")
       .update({ next_fire_at: plan.next_fire_at, last_fired_at: now.toISOString(), due_at: plan.due_at })
       .eq("id", item.id);
+
+    jobs.push({ item, subs: (subs ?? []) as Sub[], rings, body, plan, alive: new Set((subs ?? []).map((x: Sub) => x.id)), detail: [] });
+  }
+
+  // ── 2) 20초 동안 6초 간격으로 4번 — 휴대폰은 알림 한 번에 한 번만 울리므로 같은 알림(tag)을 되풀이 보냅니다
+  const sentCount = new Map<string, number>(); // item.id → 첫 펄스에서 성공한 기기 수
+  const delays = pulseDelays();
+  for (let p = 0; p < RING_PULSES; p++) {
+    if (p > 0) await new Promise((r) => setTimeout(r, delays[p] - delays[p - 1]));
+    for (const job of jobs) {
+      const payload = JSON.stringify({ ...job.body, pulse: p + 1, pulses: RING_PULSES });
+      for (const s of job.subs) {
+        if (!job.alive.has(s.id)) continue;
+        try {
+          const subscriber = app.subscribe({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } });
+          // ttl 5분 — 5분마다 다시 울리므로 늦게 도착한 옛 알림이 겹쳐 오지 않게
+          await subscriber.pushTextMessage(payload, { ttl: 5 * 60, urgency: webpush.Urgency.High });
+          if (p === 0) {
+            sentCount.set(job.item.id, (sentCount.get(job.item.id) ?? 0) + 1);
+            await db.from("sec_push_subscriptions").update({ last_ok_at: now.toISOString(), fail_count: 0 }).eq("id", s.id);
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          job.detail.push(`p${p + 1}:` + msg.slice(0, 100));
+          job.alive.delete(s.id);
+          if (p === 0) {
+            const gone = /410|404|not found|gone|expired/i.test(msg);
+            if (gone || s.fail_count >= 5) {
+              await db.from("sec_push_subscriptions").delete().eq("id", s.id);
+            } else {
+              await db.from("sec_push_subscriptions").update({ fail_count: s.fail_count + 1 }).eq("id", s.id);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── 3) 기록
+  let fired = 0;
+  const results: unknown[] = [];
+  for (const job of jobs) {
+    const sent = sentCount.get(job.item.id) ?? 0;
     await db.from("sec_alarm_log").insert({
-      user_id: item.user_id,
-      item_id: item.id,
-      devices: (subs ?? []).length,
+      user_id: job.item.user_id,
+      item_id: job.item.id,
+      devices: job.subs.length,
       sent,
-      detail: detail.join(" | "),
+      detail: (`pulses:${RING_PULSES} ` + job.detail.join(" | ")).trim(),
     });
     fired++;
-    results.push({ id: item.id, devices: (subs ?? []).length, sent, ring: rings, next: plan.next_fire_at, gave_up: plan.gave_up });
+    results.push({ id: job.item.id, devices: job.subs.length, sent, ring: job.rings, next: job.plan.next_fire_at, gave_up: job.plan.gave_up });
   }
 
   return new Response(JSON.stringify({ ok: true, fired, results }), { headers: { "content-type": "application/json" } });
