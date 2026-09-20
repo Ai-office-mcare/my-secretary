@@ -3,7 +3,7 @@
  * · 알림을 누르면 그 알람 카드로 앱을 엽니다
  * · 화면 파일은 네트워크 우선, 안 되면 저장본 (오프라인에서도 열림)
  */
-const CACHE = "sec-v3";
+const CACHE = "sec-v4";
 const FILES = ["./", "./index.html", "./style.css", "./app.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
 
 self.addEventListener("install", (e) => {
@@ -31,6 +31,32 @@ self.addEventListener("fetch", (e) => {
       .catch(() => caches.match(e.request).then((r) => r || caches.match("./index.html"))),
   );
 });
+
+
+// ★ 진단 (2026-09-20): 이 기기가 푸시를 **언제** 받았는지 기기 안에 적어 둡니다 (설정 화면에서 봄).
+//   "화면 꺼진 동안 받았는데 안 보였다" 와 "화면 켤 때야 받았다" 를 구분하기 위해서입니다.
+function recordReceipt(entry) {
+  return new Promise((resolve) => {
+    try {
+      const open = indexedDB.open("sec-diag", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("receipts", { autoIncrement: true });
+      open.onerror = () => resolve();
+      open.onsuccess = () => {
+        const db = open.result;
+        const tx = db.transaction("receipts", "readwrite");
+        const st = tx.objectStore("receipts");
+        st.add(entry);
+        // 최근 60개만 남깁니다
+        st.count().onsuccess = (ev) => {
+          const n = ev.target.result;
+          if (n > 60) st.openCursor().onsuccess = (e2) => { const c = e2.target.result; if (c && n - 60 > 0) { c.delete(); } };
+        };
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => resolve();
+      };
+    } catch { resolve(); }
+  });
+}
 
 self.addEventListener("push", (e) => {
   let data = {};
@@ -60,6 +86,7 @@ self.addEventListener("push", (e) => {
   };
   e.waitUntil(
     Promise.all([
+      recordReceipt({ at: Date.now(), title, ring: data.ring || 1, pulse: data.pulse || 1, item_id: data.item_id || null }),
       self.registration.showNotification(title, options),
       // 앱이 열려 있으면 앱 안에서도 소리·진동·깜빡임을 냅니다 (알림 소리가 꺼진 휴대폰이라도 앱 소리는 남)
       self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {

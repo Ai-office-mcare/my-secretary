@@ -405,8 +405,26 @@ async function subscribePush() {
   );
   if (error) throw new Error(error.message);
 }
+// 서비스워커가 적어 둔 수신 기록 읽기 (진단)
+function readReceipts() {
+  return new Promise((resolve) => {
+    try {
+      const open = indexedDB.open("sec-diag", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("receipts", { autoIncrement: true });
+      open.onerror = () => resolve([]);
+      open.onsuccess = () => {
+        const db = open.result;
+        const req = db.transaction("receipts").objectStore("receipts").getAll();
+        req.onsuccess = () => { db.close(); resolve((req.result || []).slice(-30).reverse()); };
+        req.onerror = () => resolve([]);
+      };
+    } catch { resolve([]); }
+  });
+}
+
 async function renderSettings() {
   const st = await pushState();
+  const receipts = await readReceipts();
   const { data: devices } = await sb.from("sec_push_subscriptions").select("id,label,created_at,last_ok_at,fail_count").order("created_at");
   const { data: logs } = await sb.from("sec_alarm_log").select("fired_at,devices,sent,detail").order("fired_at", { ascending: false }).limit(10);
   const mine = st.sub ? (devices || []).find((d) => d.endpoint === st.sub.endpoint) : null;
@@ -424,8 +442,12 @@ async function renderSettings() {
     <div class="card"><h3 style="margin:0 0 6px">등록된 기기 ${(devices || []).length}대</h3>
       ${(devices || []).map((d) => `<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(d.label || "기기")} <span class="muted">${d.last_ok_at ? "마지막 성공 " + whenText(d.last_ok_at) : ""}${d.fail_count ? " · 실패 " + d.fail_count : ""}</span></span><button class="btn danger small" data-dev="${d.id}">빼기</button></div>`).join("") || `<p class="muted">없음</p>`}
     </div>
-    <div class="card"><h3 style="margin:0 0 6px">최근 울린 기록</h3>
-      ${(logs || []).map((l) => `<div class="muted">${whenText(l.fired_at)} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
+    <div class="card"><h3 style="margin:0 0 6px">이 기기가 받은 알림 기록 <span class="muted" style="font-weight:normal">(진단용)</span></h3>
+      <p class="muted">서버가 보낸 시각(아래 "최근 울린 기록")과 견줘 보세요. 화면이 꺼진 동안 받았으면 시각이 같고, 화면을 켤 때야 받았으면 늦습니다.</p>
+      ${receipts.map((r) => `<div class="muted">${new Date(r.at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · ${esc(String(r.title || ""))}${r.pulse > 1 ? ` (${r.pulse}/4)` : ""}</div>`).join("") || `<p class="muted">아직 이 기기가 받은 알림이 없습니다 (새 판을 받은 뒤부터 기록됩니다)</p>`}
+    </div>
+    <div class="card"><h3 style="margin:0 0 6px">최근 울린 기록 <span class="muted" style="font-weight:normal">(서버가 보낸 시각)</span></h3>
+      ${(logs || []).map((l) => `<div class="muted">${new Date(l.fired_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
     </div>
     <div class="card">
       <p class="muted">${esc(user.email)}</p>
