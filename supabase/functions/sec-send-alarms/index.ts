@@ -92,9 +92,7 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify({
       title: item.title + nth,
       // ★ 잠금화면에서도 할 일·언제·세부내용이 다 보이게 (2026-09-20 대표님 요청). 메모는 줄바꿈으로 그대로.
-      body: `${when}${item.memo ? "
-" + item.memo : ""}
-${rings < NAG_MAX ? "완료·마감·날짜 바꾸기를 안 하면 5분 뒤 다시 울립니다" : "마지막 알림입니다"}`,
+      body: `${when}${item.memo ? "\n" + item.memo : ""}\n${rings < NAG_MAX ? "완료·마감·날짜 바꾸기를 안 하면 5분 뒤 다시 울립니다" : "마지막 알림입니다"}`,
       item_id: item.id,
       tag: `sec-${item.id}`,
       vibrate: longVibrate(),
