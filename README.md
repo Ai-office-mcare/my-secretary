@@ -6,3 +6,8 @@
 - 앱 주소: https://ai-office-mcare.github.io/my-secretary/
 - 설계: `docs/DESIGN.md` · 켜는 법: `docs/SETUP.md`
 - 비밀값(VAPID 개인키 · cron 비밀)은 이 저장소에 없습니다 (Supabase secrets · Vault).
+
+## 휴대폰 필수 설정 (2026-09-22)
+
+알람이 화면 꺼진 상태에서도 오려면 **설정 → 애플리케이션 → Chrome → 배터리 → "제한 없음"** 이어야 합니다. ("최적화" 면 첫 알림 뒤 몇 초 만에 끊깁니다.)
+알림이 올 때 화면이 저절로 켜지는 것은 웹 알림으로는 안 됩니다 — 전원 버튼을 누르면 잠금화면에 제목·시각·세부내용이 보입니다.
