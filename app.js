@@ -13,12 +13,11 @@ const sb = createClient(CFG.supabaseUrl, CFG.supabaseAnonKey);
 const $ = (s, el = document) => el.querySelector(s);
 const main = $("#main");
 const tabs = $("#tabs");
-import { RING_SECONDS, afterAction } from "./supabase/functions/sec-send-alarms/plan.js";
+import { FLASH_SECONDS, NAG_INTERVAL_MIN, VIBRATE, afterAction, fireAtOnSave } from "./supabase/functions/sec-send-alarms/plan.js";
 
 const REPEAT_NAMES = { none: "반복 없음", daily: "매일", weekdays: "평일(월~금)", weekly: "매주", monthly: "매월" };
 const STATUS_NAMES = { todo: "예정", doing: "진행 중", done: "완료", closed: "마감" };
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
-const VIBRATE = [400, 200, 400, 200, 400];
 
 let user = null;
 let tab = "cal";
@@ -28,6 +27,7 @@ let items = [];
 let diaries = {};
 let editing = null; // 편집 중인 항목 (null = 없음, {} = 새 항목)
 let ringing = new Set(); // 이미 화면에 띄운 알람 id
+const rangKeys = new Set(); // 이미 소리 낸 "id|회차|차례"
 let flashTimer = null;
 
 // ── 도우미 ──────────────────────────────────────────────
@@ -110,7 +110,8 @@ async function saveItem(data) {
     repeat_days: data.repeat_days || [],
     notify: !!data.notify,
     status: data.status,
-    next_fire_at: data.notify && data.due_at && (data.status === "todo" || data.status === "doing") ? data.due_at : null,
+    // ★ 2026-10-24: 이미 울린(지난) 일정을 무엇이든 고쳐 저장하면 10분 뒤 다시 알림을 끕니다 (plan.js fireAtOnSave)
+    next_fire_at: fireAtOnSave(data, new Date(), !data.id),
   };
   const q = data.id ? sb.from("sec_items").update(payload).eq("id", data.id) : sb.from("sec_items").insert(payload);
   const { error } = await q;
@@ -437,20 +438,20 @@ async function renderSettings() {
           <button class="btn" id="p-on">${st.sub ? "다시 등록" : "이 기기에서 알림 받기"}</button>
           <button class="btn ghost" id="p-test" ${st.sub ? "" : "disabled"}>시험 알림 (1분 안에)</button>
         </div>
-        <p class="muted" style="margin-top:6px">휴대폰: 진동 징·징·징 3번 + 기본 알림음. PC: 크롬 알림 + 앱이 열려 있으면 화면 깜빡임과 소리.</p>`}
+        <p class="muted" style="margin-top:6px">휴대폰: 기본 알림음 한 번 + 진동 한 번. PC: 크롬 알림 + 앱이 열려 있으면 화면 깜빡임과 소리 한 번. 시간·날짜·완료 등을 바꾸지 않으면 ${NAG_INTERVAL_MIN}분 뒤 한 번 더 알립니다.</p>`}
     </div>
     <div class="card"><h3 style="margin:0 0 6px">등록된 기기 ${(devices || []).length}대</h3>
       ${(devices || []).map((d) => `<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(d.label || "기기")} <span class="muted">${d.last_ok_at ? "마지막 성공 " + whenText(d.last_ok_at) : ""}${d.fail_count ? " · 실패 " + d.fail_count : ""}</span></span><button class="btn danger small" data-dev="${d.id}">빼기</button></div>`).join("") || `<p class="muted">없음</p>`}
     </div>
     <div class="card"><h3 style="margin:0 0 6px">이 기기가 받은 알림 기록 <span class="muted" style="font-weight:normal">(진단용)</span></h3>
       <p class="muted">서버가 보낸 시각(아래 "최근 울린 기록")과 견줘 보세요. 화면이 꺼진 동안 받았으면 시각이 같고, 화면을 켤 때야 받았으면 늦습니다.</p>
-      ${receipts.map((r) => `<div class="muted">${new Date(r.at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · ${esc(String(r.title || ""))}${r.pulse > 1 ? ` (${r.pulse}/4)` : ""}</div>`).join("") || `<p class="muted">아직 이 기기가 받은 알림이 없습니다 (새 판을 받은 뒤부터 기록됩니다)</p>`}
+      ${receipts.map((r) => `<div class="muted">${new Date(r.at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · ${esc(String(r.title || ""))}${r.ring > 1 ? " (다시 알림)" : ""}</div>`).join("") || `<p class="muted">아직 이 기기가 받은 알림이 없습니다 (새 판을 받은 뒤부터 기록됩니다)</p>`}
     </div>
     <div class="card"><h3 style="margin:0 0 6px">최근 울린 기록 <span class="muted" style="font-weight:normal">(서버가 보낸 시각)</span></h3>
       ${(logs || []).map((l) => `<div class="muted">${new Date(l.fired_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
     </div>
     <div class="card">
-      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-09-20 진단판</b></p>
+      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-10-24 한 번 울림판</b></p>
       <div class="row"><button class="btn ghost" id="logout">로그아웃</button><button class="btn ghost" id="pw">비밀번호 바꾸기</button></div>
     </div>`;
   if (st.ok) {
@@ -475,18 +476,21 @@ function beep() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const play = (t) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.35); o.start(t); o.stop(t + 0.4); };
-    play(ctx.currentTime); play(ctx.currentTime + 0.5); play(ctx.currentTime + 1.0);
+    play(ctx.currentTime);
   } catch { /* 소리를 못 내는 환경 */ }
 }
-// ★ 알람시계 방식 (2026-09-20): 한 번에 20초 울리고 멈춥니다. 처리하지 않으면 서버가 5분 뒤 다시 보내고, 그때 또 20초.
+// 소리 한 번 · 진동 한 번. 앱이 뒤에 숨어 있으면 휴대폰 알림이 대신 울리므로 내지 않습니다 (두 번 울리지 않게).
+function ringOnce() {
+  if (document.hidden) return;
+  beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE);
+}
+// ★ 2026-10-24: 소리·진동은 처음 한 번만, 화면 깜빡임만 20초. 고치지 않으면 서버가 10분 뒤 한 번 더 보냅니다.
 let flashStop = null;
 function startFlash() {
   document.body.classList.add("flash");
   clearInterval(flashTimer); clearTimeout(flashStop);
-  const ring = () => { beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); };
-  ring();
-  flashTimer = setInterval(ring, 3000);
-  flashStop = setTimeout(stopFlash, RING_SECONDS * 1000);
+  ringOnce();
+  flashStop = setTimeout(stopFlash, FLASH_SECONDS * 1000);
 }
 function stopFlash() { document.body.classList.remove("flash"); clearInterval(flashTimer); clearTimeout(flashStop); flashTimer = null; }
 
@@ -495,7 +499,7 @@ function showAlarm(it, fromPush = false, ring = 1) {
   const box = $("#alarm-modal");
   box.classList.remove("hidden");
   box.innerHTML = `<div class="box">
-    <h2>⏰ ${esc(it.title)}${ring > 1 ? ` <small>(${ring}번째 알림)</small>` : ""}</h2>
+    <h2>⏰ ${esc(it.title)}${ring > 1 ? ` <small>(다시 알림)</small>` : ""}</h2>
     <div class="m">${esc(it.memo || whenText(it.due_at))}</div>
     <div class="btns">
       <button class="btn" data-a="done">완료</button>
@@ -503,9 +507,11 @@ function showAlarm(it, fromPush = false, ring = 1) {
       <button class="btn ghost" data-a="closed">마감</button>
       <button class="btn ghost" data-a="later">1시간 뒤 다시</button>
     </div>
-    <p class="muted" style="margin:10px 0 0">${fromPush ? "알림에서 열었습니다." : "지금 시각이 되어 울립니다."} 완료·마감·날짜 바꾸기를 안 하면 <b>5분마다</b> 다시 울립니다 (최대 1시간).</p>
+    <p class="muted" style="margin:10px 0 0">${fromPush ? "알림에서 열었습니다." : "지금 시각이 되어 울립니다."} ${ring > 1 ? "마지막 알림입니다." : `시간·날짜·완료 등을 바꾸지 않으면 <b>${NAG_INTERVAL_MIN}분 뒤 한 번 더</b> 알립니다.`}</p>
   </div>`;
-  if (!fromPush) startFlash();
+  // 같은 회차·같은 차례는 한 번만 울립니다 (앱 자체 확인과 서버 푸시가 겹쳐도 소리 한 번)
+  const key = `${it.id}|${it.due_at}|${ring}`;
+  if (!fromPush && !rangKeys.has(key)) { rangKeys.add(key); startFlash(); }
   box.onclick = async (e) => {
     const b = e.target.closest("button[data-a]"); if (!b) return;
     const a = b.dataset.a;
@@ -520,20 +526,21 @@ function showAlarm(it, fromPush = false, ring = 1) {
     } catch (err) { toast("처리하지 못했습니다: " + err.message, "bad"); }
   };
 }
-const rungFor = {}; // id → 마지막으로 울린 서버 발송 시각 (5분마다 다시 울리기 위해)
+const rungFor = {}; // id → 마지막으로 울린 서버 발송 시각 (10분 뒤 다시 알림을 PC 에서도 울리기 위해)
 async function checkDue() {
   if (!user) return;
   const now = Date.now();
   for (const it of items) {
     if (!it.due_at || it.notify === false || (it.status !== "todo" && it.status !== "doing")) continue;
     const t = new Date(it.due_at).getTime();
-    // 지금 시각 ±5분 안에 든 것만 울립니다 (오래 지난 것은 목록의 '지난 일정' 으로)
-    if (t <= now && now - t < 5 * 60000 && !ringing.has(it.id)) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it); return; }
-    // ★ 서버가 다시 울렸으면(5분마다) 푸시가 안 오는 기기(PC 등)에서도 여기서 다시 웁니다.
+    // 지금 시각 5분 안에 든 것만 울립니다 (오래 지난 것은 목록의 '지난 일정' 으로).
+    // next_fire_at 이 비었으면 이미 고친 것 — 다시 울리지 않습니다.
+    if (it.next_fire_at && t <= now && now - t < 5 * 60000 && !ringing.has(it.id)) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it); return; }
+    // ★ 서버가 10분 뒤 다시 알렸으면 푸시가 안 오는 기기(PC 등)에서도 여기서 다시 웁니다.
     const fired = it.last_fired_at ? new Date(it.last_fired_at).getTime() : 0;
     if (fired && now - fired < 90000 && rungFor[it.id] !== it.last_fired_at) {
       rungFor[it.id] = it.last_fired_at;
-      const ring = Math.max(1, Math.round((now - t) / (5 * 60000)) + 1);
+      const ring = Math.max(1, Math.round((fired - t) / (NAG_INTERVAL_MIN * 60000)) + 1);
       showAlarm(it, false, ring); return;
     }
   }
@@ -568,10 +575,10 @@ async function boot() {
     if (!e.data || e.data.type !== "alarm" || !user) return;
     await loadAll();
     const it = items.find((x) => x.id === e.data.item_id);
-    // 서버는 한 번 울릴 때 6초 간격으로 4번 보냅니다(휴대폰용). 앱은 첫 번째에만 20초 울림을 시작하고 나머지는 무시합니다.
+    // 예전 판 서버가 같은 알림을 여러 번(pulse) 보내더라도 앱은 첫 번째에만 울립니다.
     if ((e.data.pulse || 1) > 1 && it && ringing.has(it.id)) return;
-    if (it) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it, false, e.data.ring || 1); } // 이미 떠 있어도 다시 20초 웁니다 (N번째)
-    else { beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE); }
+    if (it) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it, false, e.data.ring || 1); } // 다시 알림이면 한 번 더 울립니다
+    else ringOnce();
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden && user) { loadAll().then(() => { render(); checkDue(); }); } });
 }

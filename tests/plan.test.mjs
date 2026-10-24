@@ -1,15 +1,16 @@
-// 알람시계 방식(2026-09-20 대표님 요청) 계산 시험 — node --test tests/
+// 알람 계산 시험 — node --test tests/
+// 2026-10-24 대표님 요청: 소리·진동·알림 한 번, 고치지 않으면 10분 뒤 한 번 더
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nextFire, planAfterFire, NAG_INTERVAL_MIN, NAG_MAX, ringCount, RING_SECONDS, longVibrate, afterAction } from "../supabase/functions/sec-send-alarms/plan.js";
+import { nextFire, planAfterFire, NAG_INTERVAL_MIN, NAG_MAX, ringCount, VIBRATE, afterAction, fireAtOnSave } from "../supabase/functions/sec-send-alarms/plan.js";
 
 const T = (s) => new Date(s);
 const MIN = 60_000;
 
-test("설정값 — 20초 울림 · 5분 간격 · 최대 12번(1시간)", () => {
-  assert.equal(RING_SECONDS, 20);
-  assert.equal(NAG_INTERVAL_MIN, 5);
-  assert.equal(NAG_MAX, 12);
+test("설정값 — 10분 뒤 한 번 더 · 모두 2번 · 진동 한 번", () => {
+  assert.equal(NAG_INTERVAL_MIN, 10);
+  assert.equal(NAG_MAX, 2);
+  assert.equal(VIBRATE.length, 1);
 });
 
 test("다음 회차 — 매일은 한국 시간 기준 하루 뒤 같은 시각", () => {
@@ -34,23 +35,23 @@ test("울린 횟수 — 이번 회차(due_at) 이후 기록만 센다", () => {
   assert.equal(ringCount(logs, due), 2);
 });
 
-test("울린 뒤 계획 — 아직 12번 안 됐으면 5분 뒤 다시, 날짜(due_at)는 그대로", () => {
+test("울린 뒤 계획 — 첫 알림 뒤에는 10분 뒤 한 번 더, 날짜(due_at)는 그대로", () => {
   const now = T("2026-09-20T00:00:10Z");
   const p = planAfterFire(now, { due_at: "2026-09-20T00:00:00.000Z", repeat: "none", repeat_days: [] }, 1);
-  assert.equal(p.next_fire_at, new Date(now.getTime() + 5 * MIN).toISOString());
+  assert.equal(p.next_fire_at, new Date(now.getTime() + 10 * MIN).toISOString());
   assert.equal(p.due_at, "2026-09-20T00:00:00.000Z");
   assert.equal(p.gave_up, false);
 });
 
-test("울린 뒤 계획 — 12번째면 반복 없음은 멈춤(next_fire_at null)", () => {
-  const now = T("2026-09-20T00:55:10Z");
+test("울린 뒤 계획 — 다시 알림(2번째) 뒤 반복 없음은 멈춤(next_fire_at null)", () => {
+  const now = T("2026-09-20T00:10:10Z");
   const p = planAfterFire(now, { due_at: "2026-09-20T00:00:00.000Z", repeat: "none", repeat_days: [] }, NAG_MAX);
   assert.equal(p.next_fire_at, null);
   assert.equal(p.gave_up, true);
 });
 
-test("울린 뒤 계획 — 12번째면 반복 알람은 다음 회차로 넘어간다", () => {
-  const now = T("2026-09-20T00:55:10Z");
+test("울린 뒤 계획 — 다시 알림(2번째) 뒤 반복 알람은 다음 회차로 넘어간다", () => {
+  const now = T("2026-09-20T00:10:10Z");
   const p = planAfterFire(now, { due_at: "2026-09-20T00:00:00.000Z", repeat: "daily", repeat_days: [] }, NAG_MAX);
   assert.equal(p.due_at, "2026-09-21T00:00:00.000Z");
   assert.equal(p.next_fire_at, "2026-09-21T00:00:00.000Z");
@@ -88,17 +89,29 @@ test("1시간 뒤를 누르면 — 날짜를 1시간 뒤로, 진행 중, 그때 
   assert.equal(a.next_fire_at, "2026-09-20T01:03:00.000Z");
 });
 
-test("긴 진동 — 20초를 채우는 징·징·징 무늬", () => {
-  const v = longVibrate();
-  const total = v.reduce((a, b) => a + b, 0);
-  assert.ok(total >= 19_000 && total <= 21_000, String(total));
-  assert.ok(v.length % 2 === 1); // 진동으로 시작해 진동으로 끝
+test("한 번 울릴 때 알림은 한 번만 보낸다", async () => {
+  const { pulseDelays, RING_PULSES } = await import("../supabase/functions/sec-send-alarms/plan.js");
+  assert.equal(RING_PULSES, 1);
+  assert.deepEqual(pulseDelays(), [0]);
 });
 
-test("한 번 울릴 때 6초 간격으로 4번 연달아 보내 20초를 채운다 (휴대폰은 알림 한 번에 한 번만 울리므로)", async () => {
-  const { pulseDelays, RING_PULSES, PULSE_GAP_MS } = await import("../supabase/functions/sec-send-alarms/plan.js");
-  assert.equal(RING_PULSES, 4);
-  assert.equal(PULSE_GAP_MS, 6000);
-  assert.deepEqual(pulseDelays(), [0, 6000, 12000, 18000]);
-  assert.ok(pulseDelays().at(-1) + 2000 <= RING_SECONDS * 1000);
+test("저장 — 이미 울린(지난) 일정을 무엇이든 고치면 다시 알리지 않는다", () => {
+  const now = T("2026-09-20T00:03:00Z");
+  const past = { due_at: "2026-09-20T00:00:00.000Z", status: "todo", notify: true };
+  assert.equal(fireAtOnSave(past, now, false), null);
+  assert.equal(fireAtOnSave({ ...past, status: "doing" }, now, false), null);
+});
+
+test("저장 — 앞으로의 시각으로 바꾸면 그 시각에 울린다", () => {
+  const now = T("2026-09-20T00:03:00Z");
+  const it = { due_at: "2026-09-20T02:00:00.000Z", status: "doing", notify: true };
+  assert.equal(fireAtOnSave(it, now, false), "2026-09-20T02:00:00.000Z");
+});
+
+test("저장 — 새 일정은 시각이 막 지났어도 울린다, 완료·마감·알림 끔은 안 울린다", () => {
+  const now = T("2026-09-20T00:03:00Z");
+  assert.equal(fireAtOnSave({ due_at: "2026-09-20T00:02:00.000Z", status: "todo", notify: true }, now, true), "2026-09-20T00:02:00.000Z");
+  assert.equal(fireAtOnSave({ due_at: "2026-09-20T02:00:00.000Z", status: "done", notify: true }, now, false), null);
+  assert.equal(fireAtOnSave({ due_at: "2026-09-20T02:00:00.000Z", status: "closed", notify: true }, now, false), null);
+  assert.equal(fireAtOnSave({ due_at: "2026-09-20T02:00:00.000Z", status: "todo", notify: false }, now, false), null);
 });

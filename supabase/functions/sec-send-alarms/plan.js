@@ -1,18 +1,27 @@
 // 내 비서 — 알람 계산 (서버 함수와 앱이 **같은 파일**을 씁니다. 2026-09-20)
 //
-// ★ 알람시계 방식 (2026-09-20 대표님 요청)
-//   · 알람 시각에 울리고(앱이 열려 있으면 20초), 완료·마감·날짜 바꾸기·1시간 뒤 중 하나를 하지 않으면
-//     5분마다 다시 울립니다. 최대 12번(1시간) 뒤에는 멈춥니다 — 반복 알람은 다음 회차로 넘어갑니다.
+// ★ 한 번 울림 + 10분 뒤 한 번 더 (2026-10-24 대표님 요청 — 예전 "20초·5분마다 12번" 을 바꿈)
+//   · 알람 시각에 소리 한 번 · 진동 한 번 · 알림 한 번.
+//   · 그 뒤 시간·날짜·완료 등 **무엇이든 하나라도 고치지 않으면** 10분 뒤 딱 한 번 더 알립니다. 그다음은 멈춤
+//     — 반복 알람은 다음 회차로 넘어갑니다.
+//   · 고치면(저장하면) 그 자리에서 다시 알림이 꺼집니다 — fireAtOnSave: 이미 지난 시각이면 next_fire_at 을 비움.
 //   · "몇 번째 울림인가" 는 따로 저장하지 않고 sec_alarm_log 에서 **이번 회차(due_at) 이후 기록 수**로 셉니다.
 //     날짜를 바꾸면 due_at 이 바뀌어 저절로 0 부터 다시 셉니다 (칸 추가 없이 되게).
 //   · 반복 알람에서 [완료] 는 "오늘 것 끝" — 다음 회차로 넘기고 계속 예정. [마감] 은 통째로 끝.
 //
 // 순수 계산만 있습니다 (Deno·브라우저·node 어디서나). 시험: node --test tests/
 
-export const RING_SECONDS = 20;      // 앱이 열려 있을 때 한 번에 우는 시간
-export const NAG_INTERVAL_MIN = 5;   // 처리 안 하면 이 간격으로 다시
-export const NAG_MAX = 12;           // 이만큼 울리고도 처리가 없으면 그만 (5분 × 12 = 1시간)
-export const VIBRATE = [400, 200, 400, 200, 400];
+export const FLASH_SECONDS = 20;     // 앱이 열려 있을 때 화면이 깜빡이는 시간 (소리·진동은 처음 한 번만)
+export const NAG_INTERVAL_MIN = 10;  // 고치지 않으면 이만큼 뒤에 한 번 더
+export const NAG_MAX = 2;            // 처음 알림 + 다시 알림 1번
+export const VIBRATE = [500];        // 진동 한 번
+
+/** 저장할 때의 다음 울릴 시각. 이미 지난 시각의 기존 일정을 고쳤으면 다시 알리지 않습니다. */
+export function fireAtOnSave(item, now, isNew) {
+  if (!item.notify || !item.due_at || (item.status !== "todo" && item.status !== "doing")) return null;
+  if (!isNew && new Date(item.due_at).getTime() <= now.getTime()) return null;
+  return item.due_at;
+}
 
 const KST_OFFSET_MIN = 9 * 60;
 const MIN = 60_000;
@@ -92,19 +101,8 @@ export function afterAction(action, item, now) {
   return { status: item.status, next_fire_at: item.next_fire_at ?? null };
 }
 
-/** 휴대폰 알림에 실어 보내는 긴 진동 — 징·징·징을 20초 동안. */
-export function longVibrate() {
-  const out = [];
-  let total = 0;
-  while (total < RING_SECONDS * 1000 - 400) { out.push(400, 200); total += 600; }
-  out.push(400);
-  return out;
-}
-
-// ★ 2026-09-20 저녁 — 휴대폰 알림은 한 번에 "띠링·진동 한 번" 뿐이라(긴 진동 무늬는 안드로이드 크롬이 무시)
-//   20초 동안 이어지게 하려면 같은 알림을 몇 초 간격으로 **여러 번** 보내야 합니다. 같은 tag + renotify 라
-//   알림이 늘어나지 않고 소리·진동만 다시 납니다.
-export const RING_PULSES = 4;
+// ★ 2026-10-24 — 한 번 울릴 때 알림도 한 번만 보냅니다 (예전에는 20초를 채우려고 6초 간격 4번).
+export const RING_PULSES = 1;
 export const PULSE_GAP_MS = 6000;
 export function pulseDelays() {
   return Array.from({ length: RING_PULSES }, (_, i) => i * PULSE_GAP_MS);
