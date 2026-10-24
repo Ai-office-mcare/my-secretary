@@ -29,6 +29,11 @@ npx --yes supabase@latest functions deploy sec-send-alarms --project-ref nadsald
 ```
 (Supabase CLI 로그인 토큰은 Windows 자격 증명 `Supabase CLI:supabase` 에 있습니다. Docker 는 필요 없습니다.)
 
+★ 2026-10-24: 이 PC 의 CLI 로그인이 다른 Supabase 계정(mcare-rent·Work Plan)으로 바뀌어 위 명령이 403 이 남.
+Ai-office 프로젝트는 **Supabase 로그인 화면 → "Continue with GitHub" → GitHub `Ai-office-mcare`** 계정에 있음 (gmail 로그인 아님).
+CLI 없이 대시보드로 올려도 됨: Edge Functions → sec-send-alarms → Code → `index.ts`·`plan.js` 내용 바꾸기 → **Deploy updates**.
+(이렇게 올려도 Verify JWT 는 꺼진 그대로였음. 올린 뒤 Invocations 에서 1분마다 200 인지 확인)
+
 ## 표를 고쳤을 때
 
 `supabase/migrations/*.sql` 에 SQL 을 적고, 관리용 API 로 실행합니다 (CLI `db query` 가 이 프로젝트에서 시간 초과가 나서 관리 API 를 씁니다):
