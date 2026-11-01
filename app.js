@@ -26,6 +26,7 @@ let selDay = ymd(new Date());
 let items = [];
 let diaries = {};
 let editing = null; // 편집 중인 항목 (null = 없음, {} = 새 항목)
+let trainForm = false; // 열차 예약대기 결제 알림 창을 띄웠는가
 let ringing = new Set(); // 이미 화면에 띄운 알람 id
 const rangKeys = new Set(); // 이미 소리 낸 "id|회차|차례"
 let flashTimer = null;
@@ -131,7 +132,7 @@ async function deleteItem(id) {
 
 // ── 화면 뼈대 ────────────────────────────────────────────
 function setTab(t) {
-  tab = t;
+  tab = t; trainForm = false;
   for (const b of tabs.querySelectorAll("button")) b.classList.toggle("on", b.dataset.tab === t);
   render();
 }
@@ -143,9 +144,11 @@ tabs.addEventListener("click", (e) => {
 function render() {
   if (!user) return;
   tabs.hidden = false;
-  $("#top-right").innerHTML = `<button class="btn ghost small" id="add">+ 추가</button>`;
-  $("#add").onclick = () => openEditor({});
+  $("#top-right").innerHTML = `<button class="btn ghost small" id="train">🚆 열차</button> <button class="btn ghost small" id="add">+ 추가</button>`;
+  $("#add").onclick = () => { trainForm = false; openEditor({}); };
+  $("#train").onclick = () => { editing = null; trainForm = true; render(); };
   if (editing) return renderEditor();
+  if (trainForm) return renderTrain();
   if (tab === "cal") renderCal();
   else if (tab === "todo") renderTodo();
   else if (tab === "diary") renderDiary();
@@ -215,6 +218,7 @@ function renderItemList(el, list, emptyText) {
       ${it.memo ? `<div class="m">${esc(it.memo)}</div>` : ""}
       <div class="when ${isLate(it) ? "late" : ""}">${it.due_at ? "⏰ " + whenText(it.due_at) : "날짜 없음"}${it.repeat !== "none" ? " · " + REPEAT_NAMES[it.repeat] : ""}${it.notify === false ? " · 알림 꺼짐" : ""}</div>
       <div class="row" style="margin-top:6px">
+        ${isTrain(it) ? `<a class="btn small" href="${korailLink()}">코레일톡 열기</a>` : ""}
         ${it.status !== "done" ? `<button class="btn ghost small" data-act="done">완료</button>` : `<button class="btn ghost small" data-act="todo">다시 예정</button>`}
         ${it.status !== "doing" && it.status !== "done" ? `<button class="btn ghost small" data-act="doing">진행 중</button>` : ""}
         ${it.status !== "closed" ? `<button class="btn ghost small" data-act="closed">마감</button>` : ""}
@@ -337,6 +341,85 @@ function renderEditor() {
   };
 }
 
+// ── 열차 예약대기 결제 알림 (2026-11-01 대표님 요청) ─────────
+// 자리 잡기는 코레일톡 공식 '예약대기' 가 합니다 (코레일은 자동 예매 프로그램을 막음 — 직접 확인함).
+// 내비서는 결제를 잊지 않게 알려 드리고, 알림에서 코레일톡을 바로 엽니다.
+const TRAIN_MARK = "🚆";
+const STATIONS = ["서울", "용산", "영등포", "광명", "수원", "천안아산", "오송", "대전", "김천(구미)", "동대구", "신경주", "울산(통도사)", "포항", "부산", "구포", "밀양", "마산", "창원중앙", "진주", "익산", "전주", "광주송정", "목포", "순천", "여수EXPO", "청량리", "강릉", "안동"];
+const TRAIN_WHEN = { h3: "출발 3시간 전", h1: "출발 1시간 전", eve: "전날 저녁 9시", self: "직접 고르기" };
+function isTrain(it) { return String(it.title || "").startsWith(TRAIN_MARK); }
+// 안드로이드는 코레일톡 앱을 바로 열고(없으면 코레일 홈페이지), 그 밖에서는 코레일 홈페이지를 엽니다.
+function korailLink() {
+  const web = "https://www.korail.com/ticket/search/general";
+  if (/Android/i.test(navigator.userAgent)) return `intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.korail.talk;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  return web;
+}
+function trainAlarmAt(dep, kind, selfVal) {
+  if (kind === "h3") return new Date(dep.getTime() - 3 * 3600000);
+  if (kind === "h1") return new Date(dep.getTime() - 3600000);
+  if (kind === "eve") { const d = new Date(dep); d.setDate(d.getDate() - 1); d.setHours(21, 0, 0, 0); return d; }
+  return selfVal ? new Date(selfVal) : null;
+}
+function renderTrain() {
+  let last = {};
+  try { last = JSON.parse(localStorage.getItem("sec.train.last") || "{}"); } catch { /* 저장 못 하는 환경 */ }
+  main.innerHTML = `
+    <div class="card">
+      <h2 style="margin:0 0 6px">${TRAIN_MARK} 열차 예약대기 결제 알림</h2>
+      <div class="notice">
+        <b>1.</b> 코레일톡에서 원하는 열차에 <b>예약대기</b>를 먼저 신청하세요. 빈자리가 나면 코레일이 자리를 잡아 줍니다.<br>
+        <b>2.</b> 자리가 잡히면 정해진 시간 안에 <b>결제만</b> 하시면 됩니다. 내비서가 결제를 잊지 않게 알려 드립니다.
+      </div>
+      <div class="row" style="margin-top:8px"><a class="btn ghost small" href="${korailLink()}">코레일톡 열어 예약대기 신청</a></div>
+      <datalist id="t-stations">${STATIONS.map((s) => `<option value="${s}">`).join("")}</datalist>
+      <div class="grid2" style="margin-top:12px">
+        <label class="f"><span>출발역</span><input type="text" id="t-from" list="t-stations" value="${esc(last.from || "서울")}" /></label>
+        <label class="f"><span>도착역</span><input type="text" id="t-to" list="t-stations" value="${esc(last.to || "부산")}" /></label>
+      </div>
+      <div class="grid2" style="margin-top:8px">
+        <label class="f"><span>열차 날짜</span><input type="date" id="t-date" value="${selDay}" /></label>
+        <label class="f"><span>출발 시각</span><input type="time" id="t-time" value="09:00" /></label>
+      </div>
+      <label class="f" style="margin-top:8px"><span>언제 알려 드릴까요?</span>
+        <select id="t-when">${Object.entries(TRAIN_WHEN).map(([k, v]) => `<option value="${k}" ${k === (last.when || "h3") ? "selected" : ""}>${v}</option>`).join("")}</select>
+      </label>
+      <label class="f" id="t-self-wrap" style="margin-top:8px;display:none"><span>알림 날짜·시각</span><input type="datetime-local" id="t-self" /></label>
+      <label class="f" style="margin-top:8px"><span>메모 (선택)</span><input type="text" id="t-memo" placeholder="예: KTX 101, 특실" /></label>
+      <p class="muted" id="t-preview" style="margin:8px 0 0"></p>
+      <div id="t-err"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="t-save">알림 저장</button>
+        <button class="btn ghost" id="t-cancel">취소</button>
+      </div>
+    </div>`;
+  const dep = () => new Date(`${$("#t-date").value}T${$("#t-time").value || "09:00"}:00`);
+  const at = () => trainAlarmAt(dep(), $("#t-when").value, $("#t-self").value);
+  const preview = () => {
+    $("#t-self-wrap").style.display = $("#t-when").value === "self" ? "" : "none";
+    const a = at();
+    $("#t-preview").textContent = a && !isNaN(a) ? `알림: ${whenText(a.toISOString())}` : "";
+  };
+  for (const id of ["#t-date", "#t-time", "#t-when", "#t-self"]) $(id).oninput = preview;
+  preview();
+  $("#t-cancel").onclick = () => { trainForm = false; render(); };
+  $("#t-save").onclick = async () => {
+    const from = $("#t-from").value.trim(), to = $("#t-to").value.trim();
+    const d = dep(), a = at();
+    const err = (m) => ($("#t-err").innerHTML = `<div class="notice bad">${esc(m)}</div>`);
+    if (!from || !to) return err("출발역과 도착역을 넣어 주세요.");
+    if (!$("#t-date").value || isNaN(d)) return err("열차 날짜와 출발 시각을 넣어 주세요.");
+    if (!a || isNaN(a)) return err("알림 날짜·시각을 골라 주세요.");
+    if (a <= new Date()) return err("알림 시각이 이미 지났습니다. '직접 고르기' 로 지금 이후 시각을 골라 주세요.");
+    const memo = [`${whenText(d.toISOString())} 출발 열차 (코레일톡 예약대기)`, "자리가 잡혔으면 결제하세요. 아직이면 코레일톡에서 대기 상태를 확인하세요.", $("#t-memo").value.trim()].filter(Boolean).join("\n");
+    try {
+      await saveItem({ title: `${TRAIN_MARK} 열차 결제 확인 · ${from}→${to}`, memo, due_at: a.toISOString(), repeat: "none", repeat_days: [], status: "todo", notify: true });
+      try { localStorage.setItem("sec.train.last", JSON.stringify({ from, to, when: $("#t-when").value })); } catch { /* 저장 못 하는 환경 */ }
+      trainForm = false; selDay = ymd(a);
+      await loadAll(); render(); toast(`저장했습니다. ${whenText(a.toISOString())} 에 알려 드립니다.`);
+    } catch (e) { err("저장하지 못했습니다: " + e.message); }
+  };
+}
+
 // ── 할 일 ──────────────────────────────────────────────
 function renderTodo() {
   const open = items.filter((i) => i.status === "todo" || i.status === "doing").sort((a, b) => (a.due_at || "9") > (b.due_at || "9") ? 1 : -1);
@@ -451,7 +534,7 @@ async function renderSettings() {
       ${(logs || []).map((l) => `<div class="muted">${new Date(l.fired_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
     </div>
     <div class="card">
-      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-10-24 한 번 울림판</b></p>
+      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-01 열차 알림판</b></p>
       <div class="row"><button class="btn ghost" id="logout">로그아웃</button><button class="btn ghost" id="pw">비밀번호 바꾸기</button></div>
     </div>`;
   if (st.ok) {
@@ -501,6 +584,7 @@ function showAlarm(it, fromPush = false, ring = 1) {
   box.innerHTML = `<div class="box">
     <h2>⏰ ${esc(it.title)}${ring > 1 ? ` <small>(다시 알림)</small>` : ""}</h2>
     <div class="m">${esc(it.memo || whenText(it.due_at))}</div>
+    ${isTrain(it) ? `<a class="btn" href="${korailLink()}" style="display:flex;margin-bottom:8px">코레일톡 열어 결제하기</a>` : ""}
     <div class="btns">
       <button class="btn" data-a="done">완료</button>
       <button class="btn ghost" data-a="doing">진행 중 (날짜 바꾸기)</button>

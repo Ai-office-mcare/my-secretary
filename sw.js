@@ -4,7 +4,7 @@
  * · 알림을 누르면 그 알람 카드로 앱을 엽니다
  * · 화면 파일은 네트워크 우선, 안 되면 저장본 (오프라인에서도 열림)
  */
-const CACHE = "sec-v5";
+const CACHE = "sec-v6";
 const FILES = ["./", "./index.html", "./style.css", "./app.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
 
 self.addEventListener("install", (e) => {

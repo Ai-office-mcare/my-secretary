@@ -28,6 +28,7 @@ nav.tabs button.on { color: var(--accent); font-weight: 700; }
 .btn.small { min-height: 36px; padding: 0 10px; font-size: 13px; }
 .btn.big { min-height: 54px; font-size: 16px; width: 100%; }
 .btn:disabled { opacity: .5; cursor: default; }
+a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; box-sizing: border-box; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .row.between { justify-content: space-between; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
