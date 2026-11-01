@@ -3,12 +3,14 @@
  * · 앱이 화면에 떠 있으면 앱이 소리·진동을 내므로 알림은 조용히 띄웁니다 (두 번 울리지 않게)
  * · 알림을 누르면 그 알람 카드로 앱을 엽니다
  * · 화면 파일은 네트워크 우선, 안 되면 저장본 (오프라인에서도 열림)
+ * · ★ 2026-11-01: 브라우저가 10분 동안 기억해 둔 옛 파일을 쓰지 않고 매번 새 판이 있는지 서버에 물어봅니다
+ *   (GitHub Pages 가 max-age=600 을 줘서, 올린 뒤 10분 동안 휴대폰에 옛 판이 떴음)
  */
-const CACHE = "sec-v6";
+const CACHE = "sec-v7";
 const FILES = ["./", "./index.html", "./style.css", "./app.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES).catch(() => null)));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" }))).catch(() => null)));
   self.skipWaiting();
 });
 
@@ -22,8 +24,10 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
+  // 화면 이동(navigate) 요청은 옵션을 붙일 수 없어 주소로 새로 만듭니다
+  const req = e.request.mode === "navigate" ? new Request(e.request.url) : e.request;
   e.respondWith(
-    fetch(e.request)
+    fetch(req, { cache: "no-cache" })
       .then((r) => {
         const copy = r.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => null);

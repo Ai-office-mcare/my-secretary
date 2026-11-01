@@ -534,7 +534,7 @@ async function renderSettings() {
       ${(logs || []).map((l) => `<div class="muted">${new Date(l.fired_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
     </div>
     <div class="card">
-      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-01 열차 알림판</b></p>
+      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-01 열차 알림판 (2)</b></p>
       <div class="row"><button class="btn ghost" id="logout">로그아웃</button><button class="btn ghost" id="pw">비밀번호 바꾸기</button></div>
     </div>`;
   if (st.ok) {
@@ -643,7 +643,18 @@ async function handleHash() {
 
 // ── 시작 ──────────────────────────────────────────────
 async function boot() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => null);
+  if ("serviceWorker" in navigator) {
+    // ★ 2026-11-01: 새 판을 올리면 앱을 열 때 바로 받게 — sw.js 를 기억해 두지 않고, 새 서비스워커가 들어오면 한 번 새로고침
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController || reloaded || editing || trainForm) return;
+      reloaded = true; location.reload();
+    });
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => null); });
+    }).catch(() => null);
+  }
   sb.auth.onAuthStateChange(async (_ev, session) => {
     user = session?.user || null;
     if (!user) return renderAuth();
