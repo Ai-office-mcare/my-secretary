@@ -61,5 +61,5 @@ CLI 없이 대시보드로 올려도 됨: Edge Functions → sec-send-alarms →
 ```
 node --test tests/plan.test.mjs
 ```
-알람 계산(다음 회차 · 10분 뒤 한 번 더 · 고치면 멈춤 · 완료/마감 동작) 16개. 서버 함수를 고쳤으면 `functions deploy` 전에 돌린다.
+알람 계산(다음 회차 · 10분 뒤 · 1시간마다 반복 · 고치면 멈춤 · 완료/마감 동작) 22개. 서버 함수를 고쳤으면 `functions deploy` 전에 돌린다.
 (Node 24 부터는 `node --test tests/` 처럼 폴더만 주면 안 되고 파일 이름을 줘야 합니다.)

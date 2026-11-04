@@ -4,8 +4,8 @@
 //   · 머리표 x-cron-secret 이 맞아야만 돕니다 (아무나 못 부름)
 //   · next_fire_at <= 지금 이고 status 가 todo/doing 이며 notify 가 켜진 것만 고릅니다 (한 번에 최대 50건)
 //   · 그 사람의 등록 기기 전부에 웹 푸시 한 번. 진동 한 번
-//   · ★ 2026-10-24: 울린 뒤 시간·날짜·완료 등 무엇이든 고치지 않으면 10분 뒤 한 번 더, 그다음은 멈춤
-//     (반복 알람은 다음 회차로). 고치면 앱이 next_fire_at 을 비워 다시 안 울림. 계산은 plan.js (앱과 같은 파일).
+//   · ★ 2026-11-04: 울린 뒤 시간·날짜·완료 등 무엇이든 고치거나 지우지 않으면 10분 뒤, 그 뒤로는 1시간마다 계속
+//     (반복 알람은 다음 회차가 오면 그 회차로). 고치면 앱이 next_fire_at 을 비워 다시 안 울림. 계산은 plan.js (앱과 같은 파일).
 //     몇 번째인지는 sec_alarm_log 에서 이번 회차(due_at) 이후 기록 수로 셉니다.
 //   · 기기가 사라졌다(404/410)고 하면 그 등록을 지웁니다
 //
@@ -14,7 +14,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
-import { NAG_INTERVAL_MIN, NAG_MAX, RING_PULSES, VIBRATE, planAfterFire, pulseDelays, ringCount } from "./plan.js";
+import { RING_PULSES, VIBRATE, nagDelayMin, nagNotice, planAfterFire, pulseDelays, ringCount } from "./plan.js";
 
 const KST_OFFSET_MIN = 9 * 60;
 const MAX_PER_RUN = 50;
@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
     const body = {
       title: item.title + nth,
       // ★ 잠금화면에서도 할 일·언제·세부내용이 다 보이게 (2026-09-20 대표님 요청). 메모는 줄바꿈으로 그대로.
-      body: `${when}${item.memo ? "\n" + item.memo : ""}\n${rings < NAG_MAX ? `시간·날짜·완료 등을 바꾸지 않으면 ${NAG_INTERVAL_MIN}분 뒤 한 번 더 알립니다` : "마지막 알림입니다"}`,
+      body: `${when}${item.memo ? "\n" + item.memo : ""}\n${nagNotice(rings)}`,
       item_id: item.id,
       tag: `sec-${item.id}`,
       vibrate: VIBRATE,
@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
       url: `#alarm=${item.id}`,
     };
 
-    // ★ 고치지 않으면 10분 뒤 한 번 더. 2번째면 그만(반복은 다음 회차로).
+    // ★ 고치지 않으면 10분 뒤, 그 뒤로는 1시간마다 (반복 알람은 다음 회차가 오면 그 회차로).
     const plan = planAfterFire(now, item, rings);
     await db
       .from("sec_items")
@@ -122,8 +122,8 @@ Deno.serve(async (req) => {
         if (!job.alive.has(s.id)) continue;
         try {
           const subscriber = app.subscribe({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } });
-          // ttl 10분 — 10분 뒤 다시 알리므로 늦게 도착한 옛 알림이 겹쳐 오지 않게
-          await subscriber.pushTextMessage(payload, { ttl: NAG_INTERVAL_MIN * 60, urgency: webpush.Urgency.High });
+          // ttl = 다음 울림까지 — 늦게 도착한 옛 알림이 다음 알림과 겹쳐 오지 않게
+          await subscriber.pushTextMessage(payload, { ttl: nagDelayMin(job.rings) * 60, urgency: webpush.Urgency.High });
           if (p === 0) {
             sentCount.set(job.item.id, (sentCount.get(job.item.id) ?? 0) + 1);
             await db.from("sec_push_subscriptions").update({ last_ok_at: now.toISOString(), fail_count: 0 }).eq("id", s.id);
@@ -158,7 +158,7 @@ Deno.serve(async (req) => {
       detail: (`pulses:${RING_PULSES} ` + job.detail.join(" | ")).trim(),
     });
     fired++;
-    results.push({ id: job.item.id, devices: job.subs.length, sent, ring: job.rings, next: job.plan.next_fire_at, gave_up: job.plan.gave_up });
+    results.push({ id: job.item.id, devices: job.subs.length, sent, ring: job.rings, next: job.plan.next_fire_at, next_round: job.plan.next_round });
   }
 
   return new Response(JSON.stringify({ ok: true, fired, results }), { headers: { "content-type": "application/json" } });
