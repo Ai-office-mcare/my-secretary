@@ -23,6 +23,23 @@ git add -A; git commit -m "무엇을 고쳤는지"; git push origin main
 
 ## 알람 함수를 고쳤을 때
 
+### 지금 쓰는 길 (2026-11-09): Claude 앱 안 브라우저의 대시보드
+
+Claude 데스크톱 앱 안 브라우저에 Supabase 가 **GitHub `Ai-office-mcare`** 로 로그인되어 있습니다(대표님이 11-09 에 한 번 로그인, 브라우저가 기억).
+크롬의 Supabase 는 업무관리 계정(kjg8961000)이라 Ai-office 가 안 보입니다 — 크롬 계정은 바꾸지 않습니다.
+순서: 고친 커밋을 임시 브랜치로 push → 대시보드 Edge Functions → sec-send-alarms → Code 에서 `index.ts`·`plan.js` 를 그 커밋 내용으로 바꿈 →
+**Deploy updates → 확인 창의 Deploy updates 한 번 더** → 새로고침해서 코드가 바뀌었는지, Settings 의 Verify JWT 가 꺼져 있는지, Logs 가 1분마다 200 인지 확인 →
+그다음 main push(화면). 임시 브랜치는 지움. 로그인이 풀려 있으면 대표님께 그 브라우저에서 다시 로그인만 부탁.
+
+### 자동 배포(준비만 됨): GitHub Actions
+
+`.github/workflows/deploy-alarm-function.yml` — `supabase/functions/` 가 바뀐 main push 때 시험(`tests/plan.test.mjs`)을 돌리고,
+저장소 비밀 **`SUPABASE_ACCESS_TOKEN`** 이 있으면 `sec-send-alarms` 를 올립니다. **비밀이 없으면 시험만 하고 배포는 건너뜁니다**(지금 상태).
+비밀을 넣으면(Supabase 를 `Ai-office-mcare` 로 로그인 → Account → Access Tokens 에서 만든 값, 사람이 직접 저장소 Settings → Secrets → Actions 에)
+그때부터는 main push 한 번에 화면과 함수가 같이 올라갑니다. 손으로 다시 돌리기: 저장소 → Actions → "알람 함수 배포" → Run workflow.
+
+손으로 올릴 때(CLI, 예전 방법):
+
 ```powershell
 cd "$env:USERPROFILE\Desktop\내비서"
 npx --yes supabase@latest functions deploy sec-send-alarms --project-ref nadsaldjxviuvfbzglxl --no-verify-jwt
