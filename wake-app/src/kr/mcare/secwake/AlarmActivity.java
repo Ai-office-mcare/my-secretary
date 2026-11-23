@@ -20,9 +20,14 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.HashSet;
+import java.util.Set;
 
 /** 잠금화면 위에 뜨는 알람 화면. 30초 뒤 저절로 닫히고, 원래 알림은 그대로 남습니다. */
 public class AlarmActivity extends Activity {
+    static AlarmActivity shown;
+    private final Set<String> others = new HashSet<>();
+    private LinearLayout box;
     private final Handler h = new Handler(Looper.getMainLooper());
     private final Runnable end = this::finishAndRemoveTask;
     private final BroadcastReceiver close = new BroadcastReceiver() {
@@ -31,10 +36,15 @@ public class AlarmActivity extends Activity {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        shown = this;
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(true); setTurnScreenOn(true); }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(close, new IntentFilter(WakeListener.CLOSE), RECEIVER_NOT_EXPORTED);
-        else registerReceiver(close, new IntentFilter(WakeListener.CLOSE));
+        // 원래 알림을 처리했거나, 전원 버튼으로 화면을 끄면 닫습니다 (다음 알람에 옛 제목이 남지 않게)
+        IntentFilter f = new IntentFilter(WakeListener.CLOSE);
+        f.addAction(Intent.ACTION_SCREEN_OFF);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(close, f, RECEIVER_NOT_EXPORTED);
+        else registerReceiver(close, f);
         draw(getIntent());
     }
 
@@ -43,7 +53,7 @@ public class AlarmActivity extends Activity {
     @Override protected void onDestroy() {
         h.removeCallbacksAndMessages(null);
         unregisterReceiver(close);
-        Wake.clear(this);
+        if (shown == this) { shown = null; Wake.clear(this); }
         super.onDestroy();
     }
 
@@ -52,7 +62,8 @@ public class AlarmActivity extends Activity {
     private void draw(Intent i) {
         h.removeCallbacks(end);
         h.postDelayed(end, 30000);
-        LinearLayout box = new LinearLayout(this);
+        others.clear();
+        box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(24), dp(48), dp(24), dp(32));
@@ -74,6 +85,13 @@ public class AlarmActivity extends Activity {
         s.setBackgroundColor(0xFFFFFAF3);
         s.addView(box);
         setContentView(s);
+    }
+
+    void also(String key, String title) {
+        if (box == null || !others.add(key)) return;
+        h.removeCallbacks(end);
+        h.postDelayed(end, 30000);
+        box.addView(text("＋ " + title, 24, 0xFF1F1A14), 2 + others.size());
     }
 
     private TextView text(String t, int size, int color) {

@@ -8,6 +8,7 @@ off() { adb shell input keyevent 223; sleep 4; }
 check() { if [ "$2" = "$3" ]; then echo "PASS  $1 ($2)"; else echo "FAIL  $1: got $2, expected $3"; FAIL=1; fi; }
 post() { adb shell "cmd notification post -S bigtext -t '$2' '$1' '11/23 15:00 test memo'" >/dev/null; sleep 6; }
 shot() { adb exec-out screencap -p > "shots/api$API-$1.png"; }
+title() { adb shell uiautomator dump /sdcard/u.xml >/dev/null 2>&1; if adb shell cat /sdcard/u.xml | grep -q "$1"; then echo yes; else echo no; fi; }
 SEC='p#https://ai-office-mcare.github.io/#0sec-'
 
 adb install -r "$APK" || exit 1
@@ -25,11 +26,21 @@ post "${SEC}1111" ALARM-ONE;                     check "secretary alarm wakes sc
 TOP=$(adb shell dumpsys activity activities | grep -E 'ResumedActivity' | head -2); echo "$TOP"
 case "$TOP" in *AlarmActivity*) check "alarm screen on top" yes yes;; *) check "alarm screen on top" no yes;; esac
 shot alarm
+post "${SEC}1112" ALARM-ALSO;                    check "overlapping alarm title added" "$(title ALARM-ALSO)" yes; shot also
 off; sleep 1
 post "${SEC}2222" ALARM-TWO;                     check "second alarm wakes again" "$(awake)" on; shot alarm2
+check "second alarm shows its own title" "$(title ALARM-TWO)" yes
+check "old title is gone" "$(title ALARM-ONE)" no
 sleep 34
 TOP=$(adb shell dumpsys activity activities | grep -E 'ResumedActivity' | head -2)
 case "$TOP" in *AlarmActivity*) check "alarm screen closes by itself" no yes;; *) check "alarm screen closes by itself" yes yes;; esac
+
+# 잠금 비밀번호가 걸린 상태에서도 잠금화면 위에 떠야 함
+adb shell locksettings set-pin 1234; off; sleep 2
+check "locked and off" "$(awake)" off
+post "${SEC}4444" ALARM-LOCKED;                  check "wakes while PIN locked" "$(awake)" on
+check "title shown over PIN lock" "$(title ALARM-LOCKED)" yes; shot locked
+adb shell locksettings clear --old 1234; sleep 35
 
 # 알림 표시 권한이 없어도 화면은 켜져야 함 (두 번째 방법)
 if [ "$API" -ge 33 ]; then

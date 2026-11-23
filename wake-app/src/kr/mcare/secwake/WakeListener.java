@@ -24,13 +24,18 @@ public class WakeListener extends NotificationListenerService {
         // 진단용: 시각과 화면 상태만 적습니다 (알림 내용은 저장하지 않음)
         String at = new SimpleDateFormat("M/d HH:mm:ss", Locale.KOREA).format(new Date());
         getSharedPreferences("log", MODE_PRIVATE).edit().putString("last", at + (off ? " · 꺼진 화면을 켬" : " · 화면이 이미 켜져 있었음")).apply();
-        if (!off) return;
-        shownKey = n.getKey();
         Bundle e = x.extras;
         CharSequence big = e.getCharSequence(Notification.EXTRA_BIG_TEXT);
         CharSequence text = big != null ? big : e.getCharSequence(Notification.EXTRA_TEXT);
         CharSequence title = e.getCharSequence(Notification.EXTRA_TITLE);
-        Wake.fire(this, title == null ? "내 비서 알람" : title.toString(), text == null ? "" : text.toString(), x);
+        String t = title == null ? "내 비서 알람" : title.toString();
+        if (!off) {
+          // 알람 화면이 떠 있을 때 다른 일정의 알람이 겹쳐 오면 제목을 덧붙입니다 (같은 알람의 2·3번째 울림은 빼고)
+          if (AlarmActivity.shown != null && shownKey != null && !shownKey.equals(n.getKey())) AlarmActivity.shown.also(n.getKey(), t);
+          return;
+        }
+        shownKey = n.getKey();
+        Wake.fire(this, t, text == null ? "" : text.toString(), x);
     }
 
     // 원래 알림을 처리하거나 지우면 알람 화면도 닫습니다

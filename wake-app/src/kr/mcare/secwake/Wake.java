@@ -15,7 +15,7 @@ import android.util.Log;
 final class Wake {
     static final String TAG = "SecWake";
     static final String CHANNEL = "wake";
-    static final int NOTI_ID = 1;
+    private static int lastId = 0; // 알람마다 새 번호 — 같은 번호면 휴대폰이 전체 화면을 다시 띄우지 않고 앞 알람이 남습니다
 
     private Wake() {}
 
@@ -60,12 +60,14 @@ final class Wake {
                 i.putExtra("names", names).putExtra("acts", acts);
             }
         }
-        PendingIntent pi = PendingIntent.getActivity(c, 1, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        nm.notify(NOTI_ID, new Notification.Builder(c, CHANNEL)
+        clear(c);
+        lastId++;
+        PendingIntent pi = PendingIntent.getActivity(c, lastId, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        nm.notify(lastId, new Notification.Builder(c, CHANNEL)
             .setSmallIcon(R.drawable.ic_small).setContentTitle(title).setContentText(text)
             .setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PUBLIC)
             .setContentIntent(pi).setFullScreenIntent(pi, true).setAutoCancel(true).setTimeoutAfter(30000).build());
     }
 
-    static void clear(Context c) { c.getSystemService(NotificationManager.class).cancel(NOTI_ID); }
+    static void clear(Context c) { c.getSystemService(NotificationManager.class).cancelAll(); }
 }
