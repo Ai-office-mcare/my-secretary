@@ -1,13 +1,13 @@
 /* 내 비서 — 서비스워커 (2026-09-15)
- * · 앱을 닫아 두어도 푸시를 받아 알림을 띄웁니다 (소리 한 번 · 진동 한 번, 2026-10-24)
+ * · 앱을 닫아 두어도 푸시를 받아 알림을 띄웁니다 (소리·진동 3번 연속, 2026-11-23 — 알림을 누르거나 지우거나 앱을 열면 남은 울림은 멈춤)
  * · 앱이 화면에 떠 있으면 앱이 소리·진동을 내므로 알림은 조용히 띄웁니다 (두 번 울리지 않게)
  * · 알림을 누르면 그 알람 카드로 앱을 엽니다
  * · 화면 파일은 네트워크 우선, 안 되면 저장본 (오프라인에서도 열림)
  * · ★ 2026-11-01: 브라우저가 10분 동안 기억해 둔 옛 파일을 쓰지 않고 매번 새 판이 있는지 서버에 물어봅니다
  *   (GitHub Pages 가 max-age=600 을 줘서, 올린 뒤 10분 동안 휴대폰에 옛 판이 떴음)
  */
-const CACHE = "sec-v9";
-const FILES = ["./", "./index.html", "./style.css", "./app.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
+const CACHE = "sec-v10";
+const FILES = ["./", "./index.html", "./style.css", "./app.js", "./timefield.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" }))).catch(() => null)));
@@ -63,6 +63,25 @@ function recordReceipt(entry) {
   });
 }
 
+// ★ 2026-11-23 대표님 요청: 한 번 울릴 때 소리·진동을 3번 연속. 휴대폰은 알림 한 번에 한 번만 울리므로 같은 알림을 3번 띄웁니다
+//   (tag 가 같아 알림은 하나만 보임). 같은 값이 app.js 에도 있습니다.
+const RING_TIMES = 3;
+const RING_GAP_MS = 3000;
+async function appVisible() {
+  const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  return list.some((c) => c.visibilityState === "visible");
+}
+async function ringRow(title, options) {
+  await self.registration.showNotification(title, options);
+  for (let i = 1; i < RING_TIMES; i++) {
+    await new Promise((r) => setTimeout(r, RING_GAP_MS));
+    if (await appVisible()) return; // 앱을 열었음
+    const left = await self.registration.getNotifications({ tag: options.tag }).catch(() => null);
+    if (left && left.length === 0) return; // 알림을 누르거나 지웠음
+    await self.registration.showNotification(title, options);
+  }
+}
+
 self.addEventListener("push", (e) => {
   let data = {};
   try {
@@ -91,12 +110,12 @@ self.addEventListener("push", (e) => {
       recordReceipt({ at: Date.now(), title, ring: data.ring || 1, pulse: data.pulse || 1, item_id: data.item_id || null }),
       self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
         const shown = list.some((c) => c.visibilityState === "visible");
-        // 앱이 화면에 떠 있으면 앱이 소리·진동 한 번 + 깜빡임 → 알림은 조용히. 아니면 알림이 소리·진동 한 번.
+        // 앱이 화면에 떠 있으면 앱이 소리·진동 3번 + 깜빡임 → 알림은 조용히 한 번. 아니면 알림이 소리·진동 3번.
         const options = shown
           ? { ...base, silent: true }
           : { ...base, silent: false, vibrate: Array.isArray(data.vibrate) ? data.vibrate : [500] };
         for (const c of list) c.postMessage({ type: "alarm", item_id: data.item_id || null, title, body: base.body, ring: data.ring || 1, pulse: data.pulse || 1 });
-        return self.registration.showNotification(title, options);
+        return shown ? self.registration.showNotification(title, options) : ringRow(title, options);
       }),
     ]),
   );

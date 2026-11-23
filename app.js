@@ -14,6 +14,7 @@ const $ = (s, el = document) => el.querySelector(s);
 const main = $("#main");
 const tabs = $("#tabs");
 import { FLASH_SECONDS, NAG_INTERVAL_MIN, NAG_REPEAT_MIN, VIBRATE, afterAction, fireAtOnSave, nagNotice, ringFromTimes } from "./supabase/functions/sec-send-alarms/plan.js";
+import { timeField, wireTimeField } from "./timefield.js";
 
 const REPEAT_NAMES = { none: "반복 없음", daily: "매일", weekdays: "평일(월~금)", weekly: "매주", monthly: "매월" };
 const STATUS_NAMES = { todo: "예정", doing: "진행 중", done: "완료", closed: "마감" };
@@ -264,13 +265,14 @@ function openSnooze(it, afterAlarm = false) {
     </div>
     <div class="grid2" style="margin-top:10px">
       <label class="f"><span>날짜</span><input type="date" id="sn-date" value="${ymd(base)}"></label>
-      <label class="f"><span>시간</span><input type="time" id="sn-time" value="${hm(base)}"></label>
+      <div class="f"><span>시간</span>${timeField("sn-time", hm(base))}</div>
     </div>
     <div class="row" style="margin-top:10px">
       <button class="btn" id="sn-ok">이 날짜로 (진행 중)</button>
       <button class="btn ghost" id="sn-cancel">닫기</button>
     </div>
   </div>`;
+  wireTimeField("sn-time");
   const apply = async (d) => {
     try {
       await updateItem(it.id, { due_at: d.toISOString(), status: "doing" });
@@ -280,7 +282,10 @@ function openSnooze(it, afterAlarm = false) {
   };
   box.querySelectorAll("[data-min]").forEach((b) => b.onclick = () => apply(new Date(Date.now() + Number(b.dataset.min) * 60000)));
   box.querySelectorAll("[data-day]").forEach((b) => b.onclick = () => { const d = new Date(base); d.setDate(d.getDate() + Number(b.dataset.day)); if (d < new Date()) d.setTime(Date.now() + 86400000); apply(d); });
-  $("#sn-ok").onclick = () => apply(new Date(`${$("#sn-date").value}T${$("#sn-time").value || "09:00"}:00`));
+  $("#sn-ok").onclick = () => {
+    if (!$("#sn-date").value || !$("#sn-time").value) return toast("날짜와 시간을 확인해 주세요. (시 0~23, 분 0~59)", "bad");
+    apply(new Date(`${$("#sn-date").value}T${$("#sn-time").value}:00`));
+  };
   $("#sn-cancel").onclick = () => { box.classList.add("hidden"); stopFlash(); };
 }
 
@@ -297,7 +302,7 @@ function renderEditor() {
       <label class="f" style="margin-top:8px"><span>메시지 (알람에 함께 나옵니다)</span><textarea id="e-memo" placeholder="예: 김 사장님께 계약서 확인 요청">${esc(it.memo || "")}</textarea></label>
       <div class="grid2" style="margin-top:8px">
         <label class="f"><span>날짜</span><input type="date" id="e-date" value="${d ? ymd(d) : selDay}" /></label>
-        <label class="f"><span>시간</span><input type="time" id="e-time" value="${d ? hm(d) : "09:00"}" /></label>
+        <div class="f"><span>시간</span>${timeField("e-time", d ? hm(d) : "09:00")}</div>
       </div>
       <label class="f" style="margin-top:8px"><span>반복</span>
         <select id="e-repeat">${Object.entries(REPEAT_NAMES).map(([k, v]) => `<option value="${k}" ${(it.repeat || "none") === k ? "selected" : ""}>${v}</option>`).join("")}</select>
@@ -320,6 +325,7 @@ function renderEditor() {
         ${it.id ? `<button class="btn danger" id="e-del">지우기</button>` : ""}
       </div>
     </div>`;
+  wireTimeField("e-time");
   $("#e-repeat").onchange = (e) => { $("#e-days").style.display = e.target.value === "weekly" ? "" : "none"; };
   $("#e-days").onclick = (e) => { const b = e.target.closest(".chip"); if (b) b.classList.toggle("on"); };
   $("#e-cancel").onclick = () => { editing = null; render(); };
@@ -330,14 +336,16 @@ function renderEditor() {
   $("#e-save").onclick = async () => {
     const title = $("#e-title").value.trim();
     if (!title) return ($("#e-err").innerHTML = `<div class="notice bad">제목을 넣어 주세요.</div>`);
-    const date = $("#e-date").value, time = $("#e-time").value || "09:00";
+    const date = $("#e-date").value, time = $("#e-time").value;
+    if (date && !time) return ($("#e-err").innerHTML = `<div class="notice bad">시간을 확인해 주세요. (시 0~23, 분 0~59)</div>`);
     const due = date ? new Date(`${date}T${time}:00`).toISOString() : null;
     const repeat = $("#e-repeat").value;
+    const notify = $("#e-notify").value === "1"; // 저장 뒤에는 이 칸이 사라지므로 먼저 읽어 둡니다
     const repeat_days = [...$("#e-days").querySelectorAll(".chip.on")].map((b) => Number(b.dataset.d));
     try {
-      await saveItem({ id: it.id, title, memo: $("#e-memo").value, due_at: due, repeat, repeat_days, status: $("#e-status").value, notify: $("#e-notify").value === "1" });
+      await saveItem({ id: it.id, title, memo: $("#e-memo").value, due_at: due, repeat, repeat_days, status: $("#e-status").value, notify });
       editing = null; if (date) selDay = date;
-      await loadAll(); render(); toast(due && $("#e-notify").value === "1" ? "저장했습니다. " + whenText(due) + " 에 알림이 갑니다." : "저장했습니다.");
+      await loadAll(); render(); toast(due && notify ? "저장했습니다. " + whenText(due) + " 에 알림이 갑니다." : "저장했습니다.");
     } catch (err) { $("#e-err").innerHTML = `<div class="notice bad">저장하지 못했습니다: ${esc(err.message)}</div>`; }
   };
 }
@@ -379,12 +387,15 @@ function renderTrain() {
       </div>
       <div class="grid2" style="margin-top:8px">
         <label class="f"><span>열차 날짜</span><input type="date" id="t-date" value="${selDay}" /></label>
-        <label class="f"><span>출발 시각</span><input type="time" id="t-time" value="09:00" /></label>
+        <div class="f"><span>출발 시각</span>${timeField("t-time", "09:00")}</div>
       </div>
       <label class="f" style="margin-top:8px"><span>언제 알려 드릴까요?</span>
         <select id="t-when">${Object.entries(TRAIN_WHEN).map(([k, v]) => `<option value="${k}" ${k === (last.when || "h3") ? "selected" : ""}>${v}</option>`).join("")}</select>
       </label>
-      <label class="f" id="t-self-wrap" style="margin-top:8px;display:none"><span>알림 날짜·시각</span><input type="datetime-local" id="t-self" /></label>
+      <div class="grid2" id="t-self-wrap" style="margin-top:8px;display:none">
+        <label class="f"><span>알림 날짜</span><input type="date" id="t-self-date" value="${selDay}" /></label>
+        <div class="f"><span>알림 시각</span>${timeField("t-self-time", "09:00")}</div>
+      </div>
       <label class="f" style="margin-top:8px"><span>메모 (선택)</span><input type="text" id="t-memo" placeholder="예: KTX 101, 특실" /></label>
       <p class="muted" id="t-preview" style="margin:8px 0 0"></p>
       <div id="t-err"></div>
@@ -393,14 +404,16 @@ function renderTrain() {
         <button class="btn ghost" id="t-cancel">취소</button>
       </div>
     </div>`;
-  const dep = () => new Date(`${$("#t-date").value}T${$("#t-time").value || "09:00"}:00`);
-  const at = () => trainAlarmAt(dep(), $("#t-when").value, $("#t-self").value);
+  const dep = () => new Date(`${$("#t-date").value}T${$("#t-time").value}:00`);
+  const self = () => ($("#t-self-date").value && $("#t-self-time").value ? `${$("#t-self-date").value}T${$("#t-self-time").value}` : "");
+  const at = () => trainAlarmAt(dep(), $("#t-when").value, self());
   const preview = () => {
     $("#t-self-wrap").style.display = $("#t-when").value === "self" ? "" : "none";
     const a = at();
     $("#t-preview").textContent = a && !isNaN(a) ? `알림: ${whenText(a.toISOString())}` : "";
   };
-  for (const id of ["#t-date", "#t-time", "#t-when", "#t-self"]) $(id).oninput = preview;
+  for (const id of ["#t-date", "#t-when", "#t-self-date"]) $(id).oninput = preview;
+  wireTimeField("t-time", preview); wireTimeField("t-self-time", preview);
   preview();
   $("#t-cancel").onclick = () => { trainForm = false; render(); };
   $("#t-save").onclick = async () => {
@@ -522,7 +535,7 @@ async function renderSettings() {
           <button class="btn" id="p-on">${st.sub ? "다시 등록" : "이 기기에서 알림 받기"}</button>
           <button class="btn ghost" id="p-test" ${st.sub ? "" : "disabled"}>시험 알림 (1분 안에)</button>
         </div>
-        <p class="muted" style="margin-top:6px">휴대폰: 기본 알림음 한 번 + 진동 한 번. PC: 크롬 알림 + 앱이 열려 있으면 화면 깜빡임과 소리 한 번. 시간·날짜·완료 등을 바꾸지 않으면 ${NAG_INTERVAL_MIN}분 뒤 다시, 그 뒤로는 고칠 때까지 ${NAG_REPEAT_MIN / 60}시간마다 알립니다.</p>`}
+        <p class="muted" style="margin-top:6px">휴대폰: 기본 알림음 + 진동이 연속으로 ${RING_TIMES}번. PC: 크롬 알림 + 앱이 열려 있으면 화면 깜빡임과 소리 ${RING_TIMES}번. 알림을 누르거나 지우면 그 자리에서 멈춥니다. 시간·날짜·완료 등을 바꾸지 않으면 ${NAG_INTERVAL_MIN}분 뒤 다시, 그 뒤로는 고칠 때까지 ${NAG_REPEAT_MIN / 60}시간마다 알립니다.</p>`}
     </div>
     <div class="card"><h3 style="margin:0 0 6px">등록된 기기 ${(devices || []).length}대</h3>
       ${(devices || []).map((d) => `<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(d.label || "기기")} <span class="muted">${d.last_ok_at ? "마지막 성공 " + whenText(d.last_ok_at) : ""}${d.fail_count ? " · 실패 " + d.fail_count : ""}</span></span><button class="btn danger small" data-dev="${d.id}">빼기</button></div>`).join("") || `<p class="muted">없음</p>`}
@@ -535,7 +548,7 @@ async function renderSettings() {
       ${(logs || []).map((l) => `<div class="muted">${new Date(l.fired_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
     </div>
     <div class="card">
-      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-04 1시간 반복판</b></p>
+      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-23 시간 직접 입력 · 3번 울림판</b></p>
       <div class="row"><button class="btn ghost" id="logout">로그아웃</button><button class="btn ghost" id="pw">비밀번호 바꾸기</button></div>
     </div>`;
   if (st.ok) {
@@ -563,20 +576,26 @@ function beep() {
     play(ctx.currentTime);
   } catch { /* 소리를 못 내는 환경 */ }
 }
-// 소리 한 번 · 진동 한 번. 앱이 뒤에 숨어 있으면 휴대폰 알림이 대신 울리므로 내지 않습니다 (두 번 울리지 않게).
-function ringOnce() {
+// ★ 2026-11-23 대표님 요청: 한 번 울릴 때 소리·진동을 3번 연속. 같은 값이 sw.js 에도 있습니다 (RING_TIMES · RING_GAP_MS).
+const RING_TIMES = 3;
+const RING_GAP_MS = 3000;
+let ringTimer = null;
+// 앱이 뒤에 숨어 있으면 휴대폰 알림이 대신 울리므로 내지 않습니다 (두 번 울리지 않게). 처리하면 남은 울림은 멈춥니다(stopFlash).
+function ringRow(left = RING_TIMES) {
+  clearTimeout(ringTimer);
   if (document.hidden) return;
   beep(); if (navigator.vibrate) navigator.vibrate(VIBRATE);
+  if (left > 1) ringTimer = setTimeout(() => ringRow(left - 1), RING_GAP_MS);
 }
-// ★ 소리·진동은 울릴 때마다 한 번, 화면 깜빡임만 20초. 고치지 않으면 서버가 10분 뒤, 그 뒤로는 1시간마다 보냅니다 (2026-11-04).
+// ★ 소리·진동은 울릴 때마다 3번, 화면 깜빡임은 20초. 고치지 않으면 서버가 10분 뒤, 그 뒤로는 1시간마다 보냅니다 (2026-11-04).
 let flashStop = null;
 function startFlash() {
   document.body.classList.add("flash");
   clearInterval(flashTimer); clearTimeout(flashStop);
-  ringOnce();
+  ringRow();
   flashStop = setTimeout(stopFlash, FLASH_SECONDS * 1000);
 }
-function stopFlash() { document.body.classList.remove("flash"); clearInterval(flashTimer); clearTimeout(flashStop); flashTimer = null; }
+function stopFlash() { document.body.classList.remove("flash"); clearInterval(flashTimer); clearTimeout(flashStop); clearTimeout(ringTimer); flashTimer = null; }
 
 function showAlarm(it, fromPush = false, ring = 1) {
   ringing.add(it.id);
@@ -673,7 +692,7 @@ async function boot() {
     // 예전 판 서버가 같은 알림을 여러 번(pulse) 보내더라도 앱은 첫 번째에만 울립니다.
     if ((e.data.pulse || 1) > 1 && it && ringing.has(it.id)) return;
     if (it) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it, false, e.data.ring || 1); } // 다시 알림이면 한 번 더 울립니다
-    else ringOnce();
+    else ringRow();
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden && user) { loadAll().then(() => { render(); checkDue(); }); } });
 }
