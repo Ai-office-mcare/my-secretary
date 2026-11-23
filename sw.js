@@ -6,7 +6,7 @@
  * · ★ 2026-11-01: 브라우저가 10분 동안 기억해 둔 옛 파일을 쓰지 않고 매번 새 판이 있는지 서버에 물어봅니다
  *   (GitHub Pages 가 max-age=600 을 줘서, 올린 뒤 10분 동안 휴대폰에 옛 판이 떴음)
  */
-const CACHE = "sec-v8";
+const CACHE = "sec-v9";
 const FILES = ["./", "./index.html", "./style.css", "./app.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
 
 self.addEventListener("install", (e) => {
@@ -76,8 +76,9 @@ self.addEventListener("push", (e) => {
     tag: data.tag || "sec-alarm",
     renotify: true,
     requireInteraction: true,
-    icon: "./icon-192.png",
-    badge: "./icon-192.png",
+    icon: "./notify-192.png",
+    // 작은 아이콘: 안드로이드가 투명하지 않은 부분만 칠하므로 배경이 투명한 전용 그림 (2026-11-23, 예전엔 흰 네모로 보였음)
+    badge: "./badge-96.png",
     data: { url: data.url || "./", item_id: data.item_id || null },
     actions: [
       { action: "done", title: "완료" },
