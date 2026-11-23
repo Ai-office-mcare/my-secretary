@@ -37,6 +37,7 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          export ANDROID_AVD_HOME=$HOME/avd; mkdir -p $ANDROID_AVD_HOME
           S=$ANDROID_HOME/cmdline-tools/latest/bin
           IMG="system-images;android-${{ matrix.api }};google_apis;x86_64"
           (yes || true) | $S/sdkmanager --licenses >/dev/null || true
@@ -44,7 +45,8 @@ jobs:
           echo no | $S/avdmanager create avd -n t -k "$IMG" -d pixel_6
           nohup $ANDROID_HOME/emulator/emulator -avd t -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot > emu.log 2>&1 &
           export PATH="$ANDROID_HOME/platform-tools:$PATH"
-          timeout 400 adb wait-for-device
+          sleep 20; cat emu.log
+          timeout 300 adb wait-for-device || { tail -40 emu.log; exit 1; }
           timeout 600 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = 1 ]; do sleep 3; done'
           sleep 25
       - name: 시험
