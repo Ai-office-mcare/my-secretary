@@ -1,0 +1,54 @@
+# 내 비서 화면켜기(안드로이드 보조 앱) 만들기 + 가상 휴대폰 시험. 서명은 PC 에서 합니다 (열쇠를 저장소에 두지 않음).
+name: 화면켜기 앱
+on:
+  push:
+    paths: ["wake-app/**", ".github/workflows/wake-app.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash wake-app/build.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: unsigned, path: wake-app/out/unsigned.apk }
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: { api: [34, 35, 36] }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: unsigned, path: dl }
+      - name: 시험용 서명 (저장소에 서명된 파일이 있으면 그 파일로 시험)
+        run: |
+          BT="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | grep -E '^[0-9.]+$' | sort -V | tail -1)"
+          if [ -f wake-app/naebiseo-wake.apk ]; then cp wake-app/naebiseo-wake.apk test.apk; else
+            keytool -genkeypair -keystore t.jks -storepass testtest -alias t -keyalg RSA -keysize 2048 -validity 30 -dname CN=test
+            "$BT/apksigner" sign --ks t.jks --ks-pass pass:testtest --out test.apk dl/unsigned.apk
+          fi
+          "$BT/apksigner" verify --verbose --print-certs test.apk
+      - name: 가상 휴대폰 켜기
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          S=$ANDROID_HOME/cmdline-tools/latest/bin
+          IMG="system-images;android-${{ matrix.api }};google_apis;x86_64"
+          (yes || true) | $S/sdkmanager --licenses >/dev/null || true
+          $S/sdkmanager emulator platform-tools "$IMG" >/dev/null
+          echo no | $S/avdmanager create avd -n t -k "$IMG" -d pixel_6
+          nohup $ANDROID_HOME/emulator/emulator -avd t -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot > emu.log 2>&1 &
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          timeout 400 adb wait-for-device
+          timeout 600 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = 1 ]; do sleep 3; done'
+          sleep 25
+      - name: 시험
+        run: PATH="$ANDROID_HOME/platform-tools:$PATH" bash wake-app/emulator-test.sh test.apk ${{ matrix.api }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "shots-${{ matrix.api }}", path: shots }
