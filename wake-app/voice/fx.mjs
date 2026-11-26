@@ -1,4 +1,4 @@
-// 다듬기 → 음 높이기(빠르게 재생, f배) → 두 번 이어 붙이기
+// 다듬기 → (f배 빠르게 재생, 1 이면 그대로) → 앞뒤 부드럽게 → 두 번 이어 붙이기
 import fs from "node:fs";
 const [inp, out, f = "1.3"] = process.argv.slice(2), F = Number(f);
 const b = fs.readFileSync(inp); let p = 12, fmt, data;
@@ -10,6 +10,8 @@ while (a < z && Math.abs(s[a]) < th) a++; while (z > a && Math.abs(s[z]) < th) z
 const cut = s.subarray(Math.max(0, a - 300), Math.min(s.length, z + 900));
 const up = new Float32Array(Math.floor(cut.length / F));
 for (let i = 0; i < up.length; i++) { const x = i * F, k = Math.floor(x), t = x - k; up[i] = cut[k] * (1 - t) + (cut[k + 1] ?? cut[k]) * t; }
+// 앞뒤 10ms 를 부드럽게 (잘린 자리에서 '틱' 소리가 나지 않게)
+const fade = Math.round(rate * 0.01); for (let i = 0; i < fade; i++) { up[i] *= i / fade; up[up.length - 1 - i] *= i / fade; }
 const gap = Math.round(rate * 0.12), o = new Int16Array(up.length * 2 + gap), g = 29000 / peak;
 for (let i = 0; i < up.length; i++) { o[i] = Math.round(up[i] * g); o[up.length + gap + i] = Math.round(up[i] * g); }
 const body = Buffer.from(o.buffer), h = Buffer.alloc(44);
