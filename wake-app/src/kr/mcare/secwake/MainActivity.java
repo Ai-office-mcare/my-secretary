@@ -46,7 +46,7 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(56), dp(20), dp(40));
         text("내 비서 화면켜기", 26, 0xFFB45309);
-        text("내 비서 알림이 오면 \"일정 왔어\" 라고 말하고, 화면이 꺼져 있으면 화면을 켭니다. 인터넷을 쓰지 않고, 내 비서가 아닌 알림에는 반응하지 않습니다.", 16, 0xFF4A4038);
+        text("내 비서 알림이 오면 \"일정왔어 일정왔어\" 라고 말하고, 화면이 꺼져 있으면 화면을 켭니다. 인터넷을 쓰지 않고, 내 비서가 아닌 알림에는 반응하지 않습니다.", 16, 0xFF4A4038);
         step("1. 알림 접근 허용", listening(), "목록에서 '내 비서 화면켜기' 를 켜 주세요.", v -> open(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         if (!listening()) {
             text("스위치가 회색이거나 '제한된 설정' 이라고 나오면 아래 단추 → 오른쪽 위 ⋮ → '제한된 설정 허용' 을 누른 뒤 다시 해 주세요.", 14, 0xFF7A6F63);
