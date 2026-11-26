@@ -548,7 +548,7 @@ async function renderSettings() {
       ${(logs || []).map((l) => `<div class="muted">${new Date(l.fired_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
     </div>
     <div class="card">
-      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-23 시간 직접 입력 · 3번 울림판</b></p>
+      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-26 '일정 왔어' 목소리판</b></p>
       <div class="row"><button class="btn ghost" id="logout">로그아웃</button><button class="btn ghost" id="pw">비밀번호 바꾸기</button></div>
     </div>`;
   if (st.ok) {
@@ -569,13 +569,26 @@ async function renderSettings() {
 }
 
 // ── 앱이 열려 있을 때의 알람 (깜빡임 · 소리 · 진동) ────────────
+// ★ 2026-11-26 대표님 요청: 알림음 대신 "일정 왔어" 목소리 (iljeong.wav). 목소리 파일을 못 읽으면 예전처럼 '삐' 소리.
+let audioCtx = null, voiceBuf = null, voiceLoad = null;
+function loadVoice() {
+  if (!voiceLoad) voiceLoad = fetch("./iljeong.wav").then((r) => r.arrayBuffer()).then((a) => audioCtx.decodeAudioData(a)).then((b) => (voiceBuf = b)).catch(() => { voiceLoad = null; });
+  return voiceLoad;
+}
 function beep() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const play = (t) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.35); o.start(t); o.stop(t + 0.4); };
-    play(ctx.currentTime);
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = audioCtx;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const say = () => { const s = ctx.createBufferSource(); s.buffer = voiceBuf; s.connect(ctx.destination); s.start(); };
+    const ding = () => { const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime; o.frequency.value = 880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.35); o.start(t); o.stop(t + 0.4); };
+    if (voiceBuf) say(); else Promise.resolve(loadVoice()).then(() => (voiceBuf ? say() : ding())).catch(ding);
   } catch { /* 소리를 못 내는 환경 */ }
 }
+// 브라우저는 화면을 한 번 만진 뒤에야 소리를 허락하므로, 처음 만질 때 소리 장치를 열고 목소리를 미리 읽어 둡니다
+document.addEventListener("pointerdown", () => {
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume().catch(() => {}); loadVoice(); } catch { /* 소리를 못 내는 환경 */ }
+}, { once: true, capture: true });
 // ★ 2026-11-23 대표님 요청: 한 번 울릴 때 소리·진동을 3번 연속. 같은 값이 sw.js 에도 있습니다 (RING_TIMES · RING_GAP_MS).
 const RING_TIMES = 3;
 const RING_GAP_MS = 3000;

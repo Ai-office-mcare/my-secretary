@@ -6,8 +6,8 @@
  * · ★ 2026-11-01: 브라우저가 10분 동안 기억해 둔 옛 파일을 쓰지 않고 매번 새 판이 있는지 서버에 물어봅니다
  *   (GitHub Pages 가 max-age=600 을 줘서, 올린 뒤 10분 동안 휴대폰에 옛 판이 떴음)
  */
-const CACHE = "sec-v10";
-const FILES = ["./", "./index.html", "./style.css", "./app.js", "./timefield.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
+const CACHE = "sec-v11";
+const FILES = ["./", "./index.html", "./style.css", "./app.js", "./timefield.js", "./config.js", "./manifest.json", "./icon.svg", "./iljeong.wav", "./supabase/functions/sec-send-alarms/plan.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" }))).catch(() => null)));
@@ -111,8 +111,9 @@ self.addEventListener("push", (e) => {
       self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
         const shown = list.some((c) => c.visibilityState === "visible");
         // 앱이 화면에 떠 있으면 앱이 소리·진동 3번 + 깜빡임 → 알림은 조용히 한 번. 아니면 알림이 소리·진동 3번.
+        // 조용한 알림은 tag 끝에 -quiet 를 붙여 화면켜기 앱이 목소리를 또 내지 않게 합니다 (2026-11-26)
         const options = shown
-          ? { ...base, silent: true }
+          ? { ...base, silent: true, tag: base.tag + "-quiet" }
           : { ...base, silent: false, vibrate: Array.isArray(data.vibrate) ? data.vibrate : [500] };
         for (const c of list) c.postMessage({ type: "alarm", item_id: data.item_id || null, title, body: base.body, ring: data.ring || 1, pulse: data.pulse || 1 });
         return shown ? self.registration.showNotification(title, options) : ringRow(title, options);

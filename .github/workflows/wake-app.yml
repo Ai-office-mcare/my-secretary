@@ -28,7 +28,9 @@ jobs:
       - name: 시험용 서명 (저장소에 서명된 파일이 있으면 그 파일로 시험)
         run: |
           BT="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | grep -E '^[0-9.]+$' | sort -V | tail -1)"
-          if [ -f wake-app/naebiseo-wake.apk ]; then cp wake-app/naebiseo-wake.apk test.apk; else
+          ver() { "$BT/aapt2" dump badging "$1" | grep -oE "versionCode='[0-9]+'" | head -1; }
+          # 저장소의 서명된 파일이 방금 만든 판과 같은 판일 때만 그 파일로 시험 (새 판을 올린 직후엔 새로 만든 것으로)
+          if [ -f wake-app/naebiseo-wake.apk ] && [ "$(ver wake-app/naebiseo-wake.apk)" = "$(ver dl/unsigned.apk)" ]; then cp wake-app/naebiseo-wake.apk test.apk; else
             keytool -genkeypair -keystore t.jks -storepass testtest -alias t -keyalg RSA -keysize 2048 -validity 30 -dname CN=test
             "$BT/apksigner" sign --ks t.jks --ks-pass pass:testtest --out test.apk dl/unsigned.apk
           fi

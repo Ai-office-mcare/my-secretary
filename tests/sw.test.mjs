@@ -50,6 +50,7 @@ test("앱이 화면에 떠 있으면 알림은 조용히 한 번 (앱이 3번 �
   const r = await push({ title: "시험", tag: "sec-1" }, { visible: () => true });
   assert.equal(r.shown.length, 1);
   assert.equal(r.shown[0].silent, true);
+  assert.equal(r.shown[0].tag, "sec-1-quiet", "화면켜기 앱이 목소리를 또 내지 않게 표시");
 });
 
 test("알림 목록을 못 읽는 휴대폰에서도 3번 울린다", async () => {

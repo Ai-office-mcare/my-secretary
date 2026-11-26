@@ -9,7 +9,7 @@ if [ ! -f "$JAR" ]; then (yes || true) | "$SDK/cmdline-tools/latest/bin/sdkmanag
 rm -rf out && mkdir -p out/classes out/gen
 "$BT/aapt2" compile --dir res -o out/res.zip
 "$BT/aapt2" link -o out/base.apk -I "$JAR" --manifest AndroidManifest.xml --java out/gen \
-  --min-sdk-version 26 --target-sdk-version 33 --version-code 1 --version-name 1.0 out/res.zip
+  --min-sdk-version 26 --target-sdk-version 33 --version-code 2 --version-name 1.1 out/res.zip
 javac --release 11 -encoding UTF-8 -cp "$JAR" -d out/classes $(find src out/gen -name '*.java')
 "$BT/d8" --release --min-api 26 --lib "$JAR" --output out $(find out/classes -name '*.class')
 (cd out && zip -qj base.apk classes.dex)

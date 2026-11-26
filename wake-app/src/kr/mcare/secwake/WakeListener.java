@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import java.text.SimpleDateFormat;
@@ -20,6 +21,7 @@ public class WakeListener extends NotificationListenerService {
         Notification x = n.getNotification();
         if ((x.flags & Notification.FLAG_GROUP_SUMMARY) != 0) return;
         if (!Match.isSecretary(n.getPackageName(), n.getTag(), x.getChannelId(), label(n.getPackageName()))) return;
+        speak(n);
         boolean off = !Wake.screenOn(this);
         // 진단용: 시각과 화면 상태만 적습니다 (알림 내용은 저장하지 않음)
         String at = new SimpleDateFormat("M/d HH:mm:ss", Locale.KOREA).format(new Date());
@@ -36,6 +38,18 @@ public class WakeListener extends NotificationListenerService {
         }
         shownKey = n.getKey();
         Wake.fire(this, t, text == null ? "" : text.toString(), x);
+    }
+
+    // "일정 왔어" 목소리 (2026-11-26). 앱이 화면에 떠 있을 때의 조용한 알림(-quiet)은 앱이 직접 말하므로 빼고,
+    // 방해 금지 모드에 걸린 알림도 뺍니다. 3번 울림이면 알림이 3번 다시 떠서 목소리도 3번.
+    private void speak(StatusBarNotification n) {
+        String tag = n.getTag();
+        if (tag != null && tag.endsWith("-quiet")) { Log.i(Wake.TAG, "voice skipped: quiet"); return; }
+        Ranking r = new Ranking();
+        RankingMap m = getCurrentRanking();
+        if (m != null && m.getRanking(n.getKey(), r) && !r.matchesInterruptionFilter()) { Log.i(Wake.TAG, "voice skipped: do not disturb"); return; }
+        if (!Voice.allowed(this)) { Log.i(Wake.TAG, "voice skipped: off or silent mode"); return; }
+        Voice.say(this);
     }
 
     // 원래 알림을 처리하거나 지우면 알람 화면도 닫습니다

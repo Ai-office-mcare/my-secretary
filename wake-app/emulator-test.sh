@@ -22,7 +22,12 @@ adb shell input keyevent 3; sleep 2
 off; check "screen starts off" "$(awake)" off
 post 'other-app' OTHER;                          check "other notification ignored" "$(awake)" off
 post 'p#https://example.com/#0sec-1' OTHERSITE;  check "other site ignored" "$(awake)" off
+adb logcat -c
 post "${SEC}1111" ALARM-ONE;                     check "secretary alarm wakes screen" "$(awake)" on
+check "voice says 일정 왔어" "$(adb logcat -d -s SecWake:V | grep -c 'voice playing')" 1
+adb logcat -c
+post "${SEC}5555-quiet" QUIET;                   check "quiet notification has no voice" "$(adb logcat -d -s SecWake:V | grep -c 'voice skipped: quiet')" 1
+check "quiet notification not spoken" "$(adb logcat -d -s SecWake:V | grep -c 'voice playing')" 0
 TOP=$(adb shell dumpsys activity activities | grep -E 'ResumedActivity' | head -2); echo "$TOP"
 case "$TOP" in *AlarmActivity*) check "alarm screen on top" yes yes;; *) check "alarm screen on top" no yes;; esac
 shot alarm
