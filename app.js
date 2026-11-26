@@ -520,8 +520,42 @@ function readReceipts() {
   });
 }
 
+// ★ 2026-11-26 대표님 요청: 화면켜기 앱이 있는 휴대폰은 첫 울림부터 기본 알림음 대신 "일정 왔어" 목소리.
+//   이 기기 설정(helperVoice)이 켜져 있으면 sw.js 가 알림을 조용히 띄우고(tag 끝 -voice), 화면켜기 앱이 목소리+진동을 냅니다.
+//   기기마다 따로 저장합니다 (PC·다른 휴대폰은 그대로 기본 알림음).
+function devStore(mode, fn) {
+  return new Promise((resolve) => {
+    try {
+      const open = indexedDB.open("sec-set", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("kv");
+      open.onerror = () => resolve(null);
+      open.onsuccess = () => {
+        const db = open.result;
+        try {
+          const tx = db.transaction("kv", mode), req = fn(tx.objectStore("kv"));
+          tx.oncomplete = () => { db.close(); resolve(req.result ?? null); };
+          tx.onerror = () => { db.close(); resolve(null); };
+        } catch { db.close(); resolve(null); }
+      };
+    } catch { resolve(null); }
+  });
+}
+const devGet = (key) => devStore("readonly", (st) => st.get(key));
+const devSet = (key, val) => devStore("readwrite", (st) => st.put(val, key));
+// 화면켜기 앱의 "목소리로 바꾸기" 단추가 #helper-voice=on 으로 이 앱을 엽니다 (로그인 전이어도 저장)
+async function helperVoiceHash() {
+  const m = location.hash.match(/helper-voice=(on|off)/);
+  if (!m) return false;
+  history.replaceState(null, "", location.pathname);
+  await devSet("helperVoice", m[1] === "on");
+  toast(m[1] === "on" ? "이 휴대폰은 이제 첫 울림부터 \"일정 왔어\" 목소리로 알려요." : "이 휴대폰은 다시 기본 알림음으로 알려요.");
+  if (user && tab === "settings") render();
+  return true;
+}
+
 async function renderSettings() {
   const st = await pushState();
+  const helperVoice = (await devGet("helperVoice")) === true;
   const receipts = await readReceipts();
   const { data: devices } = await sb.from("sec_push_subscriptions").select("id,label,created_at,last_ok_at,fail_count").order("created_at");
   const { data: logs } = await sb.from("sec_alarm_log").select("fired_at,devices,sent,detail").order("fired_at", { ascending: false }).limit(10);
@@ -537,6 +571,12 @@ async function renderSettings() {
         </div>
         <p class="muted" style="margin-top:6px">휴대폰: 기본 알림음 + 진동이 연속으로 ${RING_TIMES}번. PC: 크롬 알림 + 앱이 열려 있으면 화면 깜빡임과 소리 ${RING_TIMES}번. 알림을 누르거나 지우면 그 자리에서 멈춥니다. 시간·날짜·완료 등을 바꾸지 않으면 ${NAG_INTERVAL_MIN}분 뒤 다시, 그 뒤로는 고칠 때까지 ${NAG_REPEAT_MIN / 60}시간마다 알립니다.</p>`}
     </div>
+    <div class="card">
+      <h3 style="margin:0 0 6px">이 휴대폰 알림 소리</h3>
+      <p>${helperVoice ? "🔊 <b>\"일정 왔어\" 목소리</b> — 화면켜기 앱이 목소리와 진동을 냅니다." : "🔔 <b>기본 알림음</b>"}</p>
+      <p class="muted">안드로이드 보조 앱 <b>내 비서 화면켜기</b>(1.2판 이상)가 깔린 휴대폰에서만 켜세요. 그 앱이 없는데 켜면 알림이 소리 없이 옵니다.</p>
+      <div class="row"><button class="btn ${helperVoice ? "ghost" : ""}" id="hv">${helperVoice ? "기본 알림음으로 되돌리기" : "목소리로 바꾸기"}</button></div>
+    </div>
     <div class="card"><h3 style="margin:0 0 6px">등록된 기기 ${(devices || []).length}대</h3>
       ${(devices || []).map((d) => `<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(d.label || "기기")} <span class="muted">${d.last_ok_at ? "마지막 성공 " + whenText(d.last_ok_at) : ""}${d.fail_count ? " · 실패 " + d.fail_count : ""}</span></span><button class="btn danger small" data-dev="${d.id}">빼기</button></div>`).join("") || `<p class="muted">없음</p>`}
     </div>
@@ -548,7 +588,7 @@ async function renderSettings() {
       ${(logs || []).map((l) => `<div class="muted">${new Date(l.fired_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
     </div>
     <div class="card">
-      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-26 '일정왔어 일정왔어' 목소리판</b></p>
+      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-26 첫 울림부터 목소리판</b></p>
       <div class="row"><button class="btn ghost" id="logout">로그아웃</button><button class="btn ghost" id="pw">비밀번호 바꾸기</button></div>
     </div>`;
   if (st.ok) {
@@ -561,6 +601,7 @@ async function renderSettings() {
     };
   }
   main.querySelectorAll("[data-dev]").forEach((b) => b.onclick = async () => { if (!confirm("이 기기를 알림에서 뺄까요?")) return; await sb.from("sec_push_subscriptions").delete().eq("id", b.dataset.dev); render(); });
+  $("#hv").onclick = async () => { await devSet("helperVoice", !helperVoice); toast(!helperVoice ? "이 휴대폰은 이제 \"일정 왔어\" 목소리로 알려요." : "기본 알림음으로 되돌렸어요."); render(); };
   $("#logout").onclick = async () => { await sb.auth.signOut(); };
   $("#pw").onclick = async () => {
     const p = prompt("새 비밀번호 (6자 이상)"); if (!p || p.length < 6) return;
@@ -662,6 +703,7 @@ async function checkDue() {
   }
 }
 async function handleHash() {
+  if (await helperVoiceHash()) return;
   const m = location.hash.match(/alarm=([0-9a-f-]+)(?:&do=(\w+))?/);
   if (!m) return;
   history.replaceState(null, "", location.pathname);
@@ -675,6 +717,7 @@ async function handleHash() {
 
 // ── 시작 ──────────────────────────────────────────────
 async function boot() {
+  helperVoiceHash();
   if ("serviceWorker" in navigator) {
     // ★ 2026-11-01: 새 판을 올리면 앱을 열 때 바로 받게 — sw.js 를 기억해 두지 않고, 새 서비스워커가 들어오면 한 번 새로고침
     const hadController = !!navigator.serviceWorker.controller;

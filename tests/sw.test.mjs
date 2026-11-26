@@ -7,7 +7,13 @@ import vm from "node:vm";
 const src = fs.readFileSync(new URL("../sw.js", import.meta.url), "utf8");
 
 // 알림·시간을 흉내 냅니다. onSleep 은 기다리는 동안 일어난 일(몇 번째 기다림인지)을 넣는 자리.
-async function push(data, { visible = () => false, onSleep = () => {}, brokenList = false } = {}) {
+// 기기 설정(sec-set 의 helperVoice)을 흉내 내는 작은 IndexedDB
+function fakeIDB(store) {
+  const later = (req, val) => { queueMicrotask(() => { req.result = val; req.onsuccess && req.onsuccess(); }); return req; };
+  const db = { close() {}, transaction: () => ({ objectStore: () => ({ get: (k) => later({}, store[k]) }) }) };
+  return { open: (name) => { if (name !== "sec-set") throw new Error("only sec-set"); return later({}, db); } };
+}
+async function push(data, { visible = () => false, onSleep = () => {}, brokenList = false, settings = null } = {}) {
   const handlers = {}, shown = [], posted = [], gaps = [];
   const state = { tray: [], sleeps: 0 };
   const self = {
@@ -21,7 +27,7 @@ async function push(data, { visible = () => false, onSleep = () => {}, brokenLis
     },
   };
   const setTimeout = (f, ms) => { gaps.push(ms); onSleep(++state.sleeps, state); queueMicrotask(f); };
-  vm.runInNewContext(src, { self, setTimeout, URL, Request: class {}, caches: {}, indexedDB: {}, Promise });
+  vm.runInNewContext(src, { self, setTimeout, URL, Request: class {}, caches: {}, indexedDB: settings ? fakeIDB(settings) : {}, Promise });
   let done;
   handlers.push({ data: { json: () => data }, waitUntil: (p) => (done = p) });
   await done;
@@ -61,4 +67,22 @@ test("알림 목록을 못 읽는 휴대폰에서도 3번 울린다", async () =
 test("작은 아이콘은 투명 배경 전용 그림", async () => {
   const r = await push({ title: "시험" });
   assert.equal(r.shown[0].badge, "./badge-96.png");
+});
+
+test("목소리 휴대폰: 알림은 조용히, tag 끝 -voice 로 화면켜기 앱에 알리고 3번 울림은 그대로", async () => {
+  const r = await push({ title: "시험", tag: "sec-1", vibrate: [500] }, { settings: { helperVoice: true } });
+  assert.equal(r.shown.length, 3);
+  for (const o of r.shown) { assert.equal(o.silent, true); assert.equal(o.tag, "sec-1-voice"); }
+});
+
+test("목소리 설정이 꺼져 있거나 읽지 못하면 기본 알림음", async () => {
+  for (const settings of [{ helperVoice: false }, {}]) {
+    const r = await push({ title: "시험", tag: "sec-1" }, { settings });
+    assert.equal(r.shown[0].silent, false); assert.equal(r.shown[0].tag, "sec-1");
+  }
+});
+
+test("목소리 휴대폰이어도 앱이 화면에 떠 있으면 앱이 말하고 알림은 -quiet", async () => {
+  const r = await push({ title: "시험", tag: "sec-1" }, { settings: { helperVoice: true }, visible: () => true });
+  assert.equal(r.shown.length, 1); assert.equal(r.shown[0].tag, "sec-1-quiet");
 });

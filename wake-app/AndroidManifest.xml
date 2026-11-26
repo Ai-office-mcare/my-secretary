@@ -2,6 +2,7 @@
 <!-- 내 비서 화면켜기: 화면이 꺼져 있을 때 내 비서 알림이 오면 화면을 켭니다. 인터넷 권한이 없습니다. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="kr.mcare.secwake">
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
