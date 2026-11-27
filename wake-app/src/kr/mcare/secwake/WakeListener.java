@@ -23,8 +23,8 @@ public class WakeListener extends NotificationListenerService {
         if ((x.flags & Notification.FLAG_GROUP_SUMMARY) != 0) return;
         if (!Match.isSecretary(n.getPackageName(), n.getTag(), x.getChannelId(), label(n.getPackageName()))) return;
         boolean off = !Wake.screenOn(this);
-        String said = speak(n);
-        // 진단용: 시각과 화면 상태, 목소리를 냈는지만 적습니다 (알림 내용은 저장하지 않음)
+        String said = ring(n);
+        // 진단용: 시각과 화면 상태, 무엇을 울렸는지만 적습니다 (알림 내용은 저장하지 않음)
         String at = new SimpleDateFormat("M/d HH:mm:ss", Locale.KOREA).format(new Date());
         getSharedPreferences("log", MODE_PRIVATE).edit().putString("last", at + (off ? " · 꺼진 화면을 켬" : " · 화면이 이미 켜져 있었음") + " · " + said).apply();
         Bundle e = x.extras;
@@ -41,27 +41,20 @@ public class WakeListener extends NotificationListenerService {
         Wake.fire(this, t, text == null ? "" : text.toString(), x);
     }
 
-    // "일정 왔어" 목소리 (2026-11-26). 앱이 화면에 떠 있을 때의 조용한 알림(-quiet)은 앱이 직접 말하므로 빼고,
-    // 방해 금지 모드에 걸린 알림도 뺍니다. 3번 울림이면 알림이 3번 다시 떠서 목소리도 3번.
-    // 내 비서가 "목소리로" 로 바꾼 휴대폰은 알림을 조용히 띄우므로(-voice) 진동도 여기서 냅니다.
-    private String speak(StatusBarNotification n) {
+    // 소리는 휴대폰 기본 알림음이 내고, 이 앱은 진동을 함께 냅니다 (2026-11-27 대표님 요청: 목소리 없애고 알림음으로, 소리 모드에서도 진동).
+    // 앱이 화면에 떠 있을 때의 조용한 알림(-quiet)은 앱이 직접 울리므로 빼고, 방해 금지 모드에 걸린 알림도 뺍니다.
+    // 예전 판 내 비서는 "목소리로" 휴대폰에서 알림을 소리 없이(-voice) 띄웠으므로 그때는 기본 알림음도 여기서 냅니다.
+    private String ring(StatusBarNotification n) {
         String tag = n.getTag();
-        if (tag != null && tag.endsWith("-quiet")) { Log.i(Wake.TAG, "voice skipped: quiet"); return "앱이 열려 있어 앱이 말함"; }
-        boolean voiceMode = tag != null && tag.endsWith("-voice");
-        if (voiceMode) Voice.prefs(this).edit().putBoolean("linked", true).apply();
+        if (tag != null && tag.endsWith("-quiet")) { Log.i(Wake.TAG, "ring skipped: quiet"); return "앱이 열려 있어 앱이 울림"; }
+        boolean silentPost = tag != null && tag.endsWith("-voice");
         Ranking r = new Ranking();
         RankingMap m = getCurrentRanking();
-        if (m != null && m.getRanking(n.getKey(), r) && !r.matchesInterruptionFilter()) { Log.i(Wake.TAG, "voice skipped: do not disturb"); return "방해 금지라 소리 안 냄"; }
-        int ringer = Voice.ringer(this);
-        // 소리 모드: 목소리와 진동을 함께 (2026-11-27 대표님 요청). 진동 모드: 조용한 알림(-voice)일 때만 여기서 진동 (보통 알림은 휴대폰이 진동)
-        if (ringer == AudioManager.RINGER_MODE_NORMAL || (voiceMode && ringer == AudioManager.RINGER_MODE_VIBRATE)) Voice.vibrate(this);
-        if (ringer == AudioManager.RINGER_MODE_NORMAL && !Voice.enabled(this)) {
-            // 목소리를 꺼 두었는데 내 비서가 알림을 조용히 띄운 휴대폰이면 기본 알림음이라도 냅니다 (소리 없이 지나가지 않게)
-            if (voiceMode) { Voice.ding(this); return "목소리 꺼 둠 · 기본 알림음"; }
-            Log.i(Wake.TAG, "voice skipped: off"); return "목소리 꺼 둠";
-        }
-        if (ringer != AudioManager.RINGER_MODE_NORMAL) { Log.i(Wake.TAG, "voice skipped: silent mode"); return ringer == AudioManager.RINGER_MODE_VIBRATE ? "진동 모드라 목소리 안 냄" : "무음 모드라 소리 안 냄"; }
-        return Voice.say(this);
+        if (m != null && m.getRanking(n.getKey(), r) && !r.matchesInterruptionFilter()) { Log.i(Wake.TAG, "ring skipped: do not disturb"); return "방해 금지라 진동 안 함"; }
+        int ringer = Ring.ringer(this);
+        if (ringer == AudioManager.RINGER_MODE_NORMAL) { Ring.vibrate(this); if (silentPost) Ring.ding(this); return "알림음 + 진동"; }
+        if (ringer == AudioManager.RINGER_MODE_VIBRATE) { if (silentPost) Ring.vibrate(this); return "진동 모드"; }
+        return "무음 모드";
     }
 
     // 원래 알림을 처리하거나 지우면 알람 화면도 닫습니다

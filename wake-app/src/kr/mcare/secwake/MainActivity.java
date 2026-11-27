@@ -45,8 +45,8 @@ public class MainActivity extends Activity {
         box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(56), dp(20), dp(40));
-        text("내 비서 화면켜기  (1.3판)", 26, 0xFFB45309);
-        text("내 비서 알림이 오면 \"일정왔어 일정왔어\" 라고 말하고, 화면이 꺼져 있으면 화면을 켭니다. 인터넷을 쓰지 않고, 내 비서가 아닌 알림에는 반응하지 않습니다.", 16, 0xFF4A4038);
+        text("내 비서 화면켜기  (1.4판)", 26, 0xFFB45309);
+        text("내 비서 알림이 오면 화면이 꺼져 있을 때 화면을 켜고, 진동을 함께 냅니다. 인터넷을 쓰지 않고, 내 비서가 아닌 알림에는 반응하지 않습니다.", 16, 0xFF4A4038);
         step("1. 알림 접근 허용", listening(), "목록에서 '내 비서 화면켜기' 를 켜 주세요.", v -> open(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         if (!listening()) {
             text("스위치가 회색이거나 '제한된 설정' 이라고 나오면 아래 단추 → 오른쪽 위 ⋮ → '제한된 설정 허용' 을 누른 뒤 다시 해 주세요.", 14, 0xFF7A6F63);
@@ -56,15 +56,7 @@ public class MainActivity extends Activity {
         step("3. 전체 화면 알림 허용", canFullScreen(), "잠금화면 위에 알람 화면을 띄웁니다.", v -> { if (Build.VERSION.SDK_INT >= 34) open(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + getPackageName()))); });
         boolean free = getSystemService(PowerManager.class).isIgnoringBatteryOptimizations(getPackageName());
         step("4. 배터리 '제한 없음'", free, "앱 정보 → 배터리 → 제한 없음", v -> appInfo());
-        // 5. 내 비서(웹)가 이 휴대폰에서는 알림을 조용히 띄우고 이 앱이 목소리를 내게 바꿉니다 (#helper-voice=on)
-        step("5. 첫 울림부터 목소리로", Voice.prefs(this).getBoolean("linked", false),
-            "누르면 내 비서가 열리면서 이 휴대폰은 기본 '띵' 알림음 대신 \"일정 왔어\" 목소리와 진동으로 바뀝니다. 내 비서 화면에 안내가 뜨면 이 앱으로 돌아오세요.",
-            v -> { Voice.prefs(this).edit().putBoolean("linked", true).apply(); open(new Intent(Intent.ACTION_VIEW, Uri.parse("https://ai-office-mcare.github.io/my-secretary/#helper-voice=on"))); });
-        boolean voice = Voice.enabled(this);
-        text((voice ? "🔊 목소리 알림 켜짐" : "🔇 목소리 알림 꺼짐"), 19, voice ? 0xFF15803D : 0xFF1F1A14);
-        text("알림 소리 크기를 따르고, 소리 모드에서는 목소리와 진동을 함께, 진동 모드에서는 진동만, 무음 모드에서는 아무것도 내지 않습니다. 5번이 안 되어 있으면 기본 '띵' 소리 뒤에 목소리가 나옵니다.", 14, 0xFF7A6F63);
-        button("목소리 들어보기", false, v -> { Voice.vibrate(this); Voice.say(this); });
-        button(voice ? "목소리 알림 끄기" : "목소리 알림 켜기", false, v -> { Voice.setEnabled(this, !voice); draw(); });
+        text("소리 모드에서는 휴대폰 기본 알림음과 함께 진동을, 진동 모드에서는 진동만, 무음 모드에서는 아무것도 내지 않습니다.", 14, 0xFF7A6F63);
         button("시험: 누르고 바로 화면을 끄세요 (10초 뒤 켜짐)", true, v -> test());
         text("최근: " + getSharedPreferences("log", MODE_PRIVATE).getString("last", "아직 내 비서 알림을 받지 않았습니다"), 14, 0xFF7A6F63);
         ScrollView s = new ScrollView(this);
@@ -76,8 +68,7 @@ public class MainActivity extends Activity {
     private void test() {
         getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "secwake:test").acquire(14000);
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            Voice.vibrate(this);
-            if (Voice.allowed(this)) Voice.say(this);
+            Ring.vibrate(this);
             Wake.fire(getApplicationContext(), "시험 알람", "화면이 저절로 켜졌으면 성공입니다.", null);
         }, 10000);
         Toast.makeText(this, "지금 전원 버튼을 눌러 화면을 끄세요", Toast.LENGTH_LONG).show();

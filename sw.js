@@ -7,8 +7,8 @@
  * · ★ 2026-11-01: 브라우저가 10분 동안 기억해 둔 옛 파일을 쓰지 않고 매번 새 판이 있는지 서버에 물어봅니다
  *   (GitHub Pages 가 max-age=600 을 줘서, 올린 뒤 10분 동안 휴대폰에 옛 판이 떴음)
  */
-const CACHE = "sec-v13";
-const FILES = ["./", "./index.html", "./style.css", "./app.js", "./timefield.js", "./config.js", "./manifest.json", "./icon.svg", "./iljeong.wav", "./supabase/functions/sec-send-alarms/plan.js"];
+const CACHE = "sec-v14";
+const FILES = ["./", "./index.html", "./style.css", "./app.js", "./timefield.js", "./config.js", "./manifest.json", "./icon.svg", "./supabase/functions/sec-send-alarms/plan.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" }))).catch(() => null)));
@@ -83,25 +83,6 @@ async function ringRow(title, options) {
   }
 }
 
-// ★ 2026-11-26: 이 기기 설정 "목소리로" (app.js devSet helperVoice) — 켜져 있으면 알림은 조용히, 화면켜기 앱이 목소리+진동
-function helperVoice() {
-  return new Promise((resolve) => {
-    try {
-      const open = indexedDB.open("sec-set", 1);
-      open.onupgradeneeded = () => open.result.createObjectStore("kv");
-      open.onerror = () => resolve(false);
-      open.onsuccess = () => {
-        const db = open.result;
-        try {
-          const req = db.transaction("kv").objectStore("kv").get("helperVoice");
-          req.onsuccess = () => { db.close(); resolve(req.result === true); };
-          req.onerror = () => { db.close(); resolve(false); };
-        } catch { db.close(); resolve(false); }
-      };
-    } catch { resolve(false); }
-  });
-}
-
 self.addEventListener("push", (e) => {
   let data = {};
   try {
@@ -128,15 +109,13 @@ self.addEventListener("push", (e) => {
   e.waitUntil(
     Promise.all([
       recordReceipt({ at: Date.now(), title, ring: data.ring || 1, pulse: data.pulse || 1, item_id: data.item_id || null }),
-      Promise.all([self.clients.matchAll({ type: "window", includeUncontrolled: true }), helperVoice()]).then(([list, voice]) => {
+      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
         const shown = list.some((c) => c.visibilityState === "visible");
         // 앱이 화면에 떠 있으면 앱이 소리·진동 3번 + 깜빡임 → 알림은 조용히 한 번. 아니면 알림이 소리·진동 3번.
-        // 조용한 알림은 tag 끝에 -quiet 를 붙여 화면켜기 앱이 목소리를 또 내지 않게 합니다 (2026-11-26)
+        // 조용한 알림은 tag 끝에 -quiet 를 붙여 화면켜기 앱이 진동을 또 내지 않게 합니다 (2026-11-26)
+        // ("일정 왔어" 목소리는 2026-11-27 대표님 요청으로 없앰 → 언제나 휴대폰 기본 알림음)
         const options = shown
           ? { ...base, silent: true, tag: base.tag + "-quiet" }
-          : voice
-          // 목소리 휴대폰: 기본 알림음 대신 화면켜기 앱이 "일정 왔어" + 진동 (tag 끝 -voice 가 그 신호), 3번 울림은 그대로
-          ? { ...base, silent: true, tag: base.tag + "-voice" }
           : { ...base, silent: false, vibrate: Array.isArray(data.vibrate) ? data.vibrate : [500] };
         for (const c of list) c.postMessage({ type: "alarm", item_id: data.item_id || null, title, body: base.body, ring: data.ring || 1, pulse: data.pulse || 1 });
         return shown ? self.registration.showNotification(title, options) : ringRow(title, options);

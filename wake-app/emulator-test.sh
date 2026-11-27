@@ -24,15 +24,15 @@ post 'other-app' OTHER;                          check "other notification ignor
 post 'p#https://example.com/#0sec-1' OTHERSITE;  check "other site ignored" "$(awake)" off
 adb logcat -c
 post "${SEC}1111" ALARM-ONE;                     check "secretary alarm wakes screen" "$(awake)" on
-check "voice says 일정 왔어" "$(adb logcat -d -s SecWake:V | grep -c 'voice playing')" 1
+check "no voice" "$(adb logcat -d -s SecWake:V | grep -c 'voice playing')" 0
 check "sound mode also vibrates" "$(adb logcat -d -s SecWake:V | grep -c 'vibrate$')" 1
+check "default sound left to phone" "$(adb logcat -d -s SecWake:V | grep -c 'ding$')" 0
 adb logcat -c
-post "${SEC}5555-quiet" QUIET;                   check "quiet notification has no voice" "$(adb logcat -d -s SecWake:V | grep -c 'voice skipped: quiet')" 1
-check "quiet notification not spoken" "$(adb logcat -d -s SecWake:V | grep -c 'voice playing')" 0
+post "${SEC}5555-quiet" QUIET;                   check "quiet notification skipped" "$(adb logcat -d -s SecWake:V | grep -c 'ring skipped: quiet')" 1
 check "quiet notification no vibration" "$(adb logcat -d -s SecWake:V | grep -c 'vibrate$')" 0
 adb logcat -c
-post "${SEC}6666-voice" VOICEMODE;               check "voice mode speaks" "$(adb logcat -d -s SecWake:V | grep -c 'voice playing')" 1
-check "voice mode vibrates" "$(adb logcat -d -s SecWake:V | grep -c 'vibrate$')" 1
+post "${SEC}6666-voice" OLDSILENT;               check "old silent notification gets default sound" "$(adb logcat -d -s SecWake:V | grep -c 'ding$')" 1
+check "old silent notification vibrates" "$(adb logcat -d -s SecWake:V | grep -c 'vibrate$')" 1
 TOP=$(adb shell dumpsys activity activities | grep -E 'ResumedActivity' | head -2); echo "$TOP"
 case "$TOP" in *AlarmActivity*) check "alarm screen on top" yes yes;; *) check "alarm screen on top" no yes;; esac
 shot alarm
