@@ -53,7 +53,8 @@ public class WakeListener extends NotificationListenerService {
         RankingMap m = getCurrentRanking();
         if (m != null && m.getRanking(n.getKey(), r) && !r.matchesInterruptionFilter()) { Log.i(Wake.TAG, "voice skipped: do not disturb"); return "방해 금지라 소리 안 냄"; }
         int ringer = Voice.ringer(this);
-        if (voiceMode && ringer != AudioManager.RINGER_MODE_SILENT) Voice.vibrate(this);
+        // 소리 모드: 목소리와 진동을 함께 (2026-11-27 대표님 요청). 진동 모드: 조용한 알림(-voice)일 때만 여기서 진동 (보통 알림은 휴대폰이 진동)
+        if (ringer == AudioManager.RINGER_MODE_NORMAL || (voiceMode && ringer == AudioManager.RINGER_MODE_VIBRATE)) Voice.vibrate(this);
         if (ringer == AudioManager.RINGER_MODE_NORMAL && !Voice.enabled(this)) {
             // 목소리를 꺼 두었는데 내 비서가 알림을 조용히 띄운 휴대폰이면 기본 알림음이라도 냅니다 (소리 없이 지나가지 않게)
             if (voiceMode) { Voice.ding(this); return "목소리 꺼 둠 · 기본 알림음"; }

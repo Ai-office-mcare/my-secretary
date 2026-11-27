@@ -45,7 +45,7 @@ public class MainActivity extends Activity {
         box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(56), dp(20), dp(40));
-        text("내 비서 화면켜기  (1.2판)", 26, 0xFFB45309);
+        text("내 비서 화면켜기  (1.3판)", 26, 0xFFB45309);
         text("내 비서 알림이 오면 \"일정왔어 일정왔어\" 라고 말하고, 화면이 꺼져 있으면 화면을 켭니다. 인터넷을 쓰지 않고, 내 비서가 아닌 알림에는 반응하지 않습니다.", 16, 0xFF4A4038);
         step("1. 알림 접근 허용", listening(), "목록에서 '내 비서 화면켜기' 를 켜 주세요.", v -> open(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         if (!listening()) {
@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
             v -> { Voice.prefs(this).edit().putBoolean("linked", true).apply(); open(new Intent(Intent.ACTION_VIEW, Uri.parse("https://ai-office-mcare.github.io/my-secretary/#helper-voice=on"))); });
         boolean voice = Voice.enabled(this);
         text((voice ? "🔊 목소리 알림 켜짐" : "🔇 목소리 알림 꺼짐"), 19, voice ? 0xFF15803D : 0xFF1F1A14);
-        text("알림 소리 크기를 따르고, 진동 모드에서는 진동만, 무음 모드에서는 아무것도 내지 않습니다. 5번이 안 되어 있으면 기본 '띵' 소리 뒤에 목소리가 나옵니다.", 14, 0xFF7A6F63);
+        text("알림 소리 크기를 따르고, 소리 모드에서는 목소리와 진동을 함께, 진동 모드에서는 진동만, 무음 모드에서는 아무것도 내지 않습니다. 5번이 안 되어 있으면 기본 '띵' 소리 뒤에 목소리가 나옵니다.", 14, 0xFF7A6F63);
         button("목소리 들어보기", false, v -> { Voice.vibrate(this); Voice.say(this); });
         button(voice ? "목소리 알림 끄기" : "목소리 알림 켜기", false, v -> { Voice.setEnabled(this, !voice); draw(); });
         button("시험: 누르고 바로 화면을 끄세요 (10초 뒤 켜짐)", true, v -> test());

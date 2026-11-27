@@ -15,7 +15,7 @@ import android.util.Log;
 /**
  * 내 비서 알림이 오면 "일정 왔어 일정 왔어" 목소리를 냅니다 (2026-11-26 대표님 요청).
  * 알림 소리 크기를 따르고, 무음·진동 모드에서는 말하지 않습니다. 이미 말하는 중이면 겹쳐 내지 않습니다.
- * 내 비서가 알림을 조용히 띄운 휴대폰(tag 끝 -voice)에서는 진동도 여기서 냅니다.
+ * 진동도 여기서 냅니다: 소리 모드에서는 목소리와 함께 늘, 진동 모드에서는 내 비서가 알림을 조용히 띄운 휴대폰(tag 끝 -voice)만.
  */
 final class Voice {
     private static MediaPlayer playing;
@@ -36,8 +36,9 @@ final class Voice {
         try {
             Vibrator v = c.getSystemService(Vibrator.class);
             if (v == null || !v.hasVibrator()) return;
-            AudioAttributes a = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build();
-            v.vibrate(VibrationEffect.createWaveform(new long[] { 0, 500 }, -1), a);
+            // 알람 종류로 냅니다: 알림 종류는 "소리 모드에서는 진동 안 함" 설정에 막힐 수 있음 (무음·방해 금지는 WakeListener 가 먼저 거름)
+            AudioAttributes a = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build();
+            v.vibrate(VibrationEffect.createWaveform(new long[] { 0, 400, 150, 400 }, -1), a);
             Log.i(Wake.TAG, "vibrate");
         } catch (RuntimeException e) { Log.w(Wake.TAG, "vibrate failed", e); }
     }
