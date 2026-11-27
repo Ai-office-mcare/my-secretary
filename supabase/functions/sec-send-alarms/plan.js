@@ -91,6 +91,15 @@ export function ringFromTimes(item) {
 }
 
 /**
+ * 앱을 연 시각(openedAt, ms) 전에 이미 울린 알람인지 — 휴대폰 알림이 먼저 울렸고 앱을 열었다는 건 확인한 것이므로
+ * 앱은 알람 창만 띄우고 다시 울리지 않습니다 (2026-11-27 대표님 요청). 마지막으로 울린 때 = 서버가 다시 알린 때 또는 제 시각.
+ */
+export function rangBefore(item, openedAt) {
+  const at = Math.max(item.due_at ? new Date(item.due_at).getTime() : 0, item.last_fired_at ? new Date(item.last_fired_at).getTime() : 0);
+  return at > 0 && at <= openedAt;
+}
+
+/**
  * 방금 울리고 난 뒤 표에 적을 값.
  * ringsSoFar 는 **이번 울림을 포함한** 횟수.
  */

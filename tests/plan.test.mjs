@@ -3,7 +3,7 @@
 // 2026-11-04 대표님 요청: 고치지 않으면 10분 뒤 한 번, 그 뒤로는 고칠 때까지 1시간마다
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nextFire, planAfterFire, NAG_INTERVAL_MIN, NAG_REPEAT_MIN, nagDelayMin, nagNotice, ringCount, ringFromTimes, VIBRATE, afterAction, fireAtOnSave } from "../supabase/functions/sec-send-alarms/plan.js";
+import { nextFire, planAfterFire, NAG_INTERVAL_MIN, NAG_REPEAT_MIN, nagDelayMin, nagNotice, ringCount, ringFromTimes, VIBRATE, afterAction, fireAtOnSave, rangBefore } from "../supabase/functions/sec-send-alarms/plan.js";
 
 const T = (s) => new Date(s);
 const MIN = 60_000;
@@ -159,4 +159,14 @@ test("저장 — 새 일정은 시각이 막 지났어도 울린다, 완료·마
   assert.equal(fireAtOnSave({ due_at: "2026-09-20T02:00:00.000Z", status: "done", notify: true }, now, false), null);
   assert.equal(fireAtOnSave({ due_at: "2026-09-20T02:00:00.000Z", status: "closed", notify: true }, now, false), null);
   assert.equal(fireAtOnSave({ due_at: "2026-09-20T02:00:00.000Z", status: "todo", notify: false }, now, false), null);
+});
+
+// 2026-11-27 대표님 요청: 알림이 이미 울린 뒤 앱을 열면(알림을 눌러 들어오면) 앱이 또 울리지 않는다
+test("앱을 열기 전에 울린 알람은 열 때 다시 울리지 않는다", () => {
+  const due = "2026-11-27T01:00:00Z";
+  const opened = T("2026-11-27T01:00:40Z").getTime();
+  assert.equal(rangBefore({ due_at: due, last_fired_at: null }, opened), true, "제 시각에 울리고 40초 뒤 열었음");
+  assert.equal(rangBefore({ due_at: due, last_fired_at: "2026-11-27T01:00:05Z" }, opened), true);
+  assert.equal(rangBefore({ due_at: due, last_fired_at: "2026-11-27T01:10:00Z" }, opened), false, "열어 둔 동안 다시 알림 → 울림");
+  assert.equal(rangBefore({ due_at: "2026-11-27T01:02:00Z", last_fired_at: null }, opened), false, "열어 둔 동안 시각이 됨 → 울림");
 });

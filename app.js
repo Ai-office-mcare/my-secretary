@@ -13,7 +13,7 @@ const sb = createClient(CFG.supabaseUrl, CFG.supabaseAnonKey);
 const $ = (s, el = document) => el.querySelector(s);
 const main = $("#main");
 const tabs = $("#tabs");
-import { FLASH_SECONDS, NAG_INTERVAL_MIN, NAG_REPEAT_MIN, VIBRATE, afterAction, fireAtOnSave, nagNotice, ringFromTimes } from "./supabase/functions/sec-send-alarms/plan.js";
+import { FLASH_SECONDS, NAG_INTERVAL_MIN, NAG_REPEAT_MIN, VIBRATE, afterAction, fireAtOnSave, nagNotice, rangBefore, ringFromTimes } from "./supabase/functions/sec-send-alarms/plan.js";
 import { timeField, wireTimeField } from "./timefield.js";
 
 const REPEAT_NAMES = { none: "반복 없음", daily: "매일", weekdays: "평일(월~금)", weekly: "매주", monthly: "매월" };
@@ -588,7 +588,7 @@ async function renderSettings() {
       ${(logs || []).map((l) => `<div class="muted">${new Date(l.fired_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · 기기 ${l.devices}대 중 ${l.sent}대 성공${l.detail ? " · " + esc(l.detail.slice(0, 80)) : ""}</div>`).join("") || `<p class="muted">아직 없음</p>`}
     </div>
     <div class="card">
-      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-26 첫 울림부터 목소리판</b></p>
+      <p class="muted">${esc(user.email)} · 앱 판 <b>2026-11-27 열 때 다시 안 울림판</b></p>
       <div class="row"><button class="btn ghost" id="logout">로그아웃</button><button class="btn ghost" id="pw">비밀번호 바꾸기</button></div>
     </div>`;
   if (st.ok) {
@@ -685,6 +685,8 @@ function showAlarm(it, fromPush = false, ring = 1) {
   };
 }
 const rungFor = {}; // id → 마지막으로 울린 서버 발송 시각 (다시 알림을 PC 에서도 울리기 위해)
+// ★ 2026-11-27 대표님 요청: 알림이 울린 뒤 앱을 열면 확인한 것 — 앱을 연(화면에 띄운) 시각 전에 울린 알람은 창만 띄우고 다시 울리지 않습니다
+let openedAt = Date.now();
 async function checkDue() {
   if (!user) return;
   const now = Date.now();
@@ -693,12 +695,12 @@ async function checkDue() {
     const t = new Date(it.due_at).getTime();
     // 지금 시각 5분 안에 든 것만 울립니다 (오래 지난 것은 목록의 '지난 일정' 으로).
     // next_fire_at 이 비었으면 이미 고친 것 — 다시 울리지 않습니다.
-    if (it.next_fire_at && t <= now && now - t < 5 * 60000 && !ringing.has(it.id)) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it); return; }
+    if (it.next_fire_at && t <= now && now - t < 5 * 60000 && !ringing.has(it.id)) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it, rangBefore(it, openedAt)); return; }
     // ★ 서버가 다시 알렸으면(10분 뒤 · 1시간마다) 푸시가 안 오는 기기(PC 등)에서도 여기서 다시 웁니다.
     const fired = it.last_fired_at ? new Date(it.last_fired_at).getTime() : 0;
     if (fired && now - fired < 90000 && rungFor[it.id] !== it.last_fired_at) {
       rungFor[it.id] = it.last_fired_at;
-      showAlarm(it, false, ringFromTimes(it)); return;
+      showAlarm(it, rangBefore(it, openedAt), ringFromTimes(it)); return;
     }
   }
 }
@@ -747,9 +749,10 @@ async function boot() {
     const it = items.find((x) => x.id === e.data.item_id);
     // 예전 판 서버가 같은 알림을 여러 번(pulse) 보내더라도 앱은 첫 번째에만 울립니다.
     if ((e.data.pulse || 1) > 1 && it && ringing.has(it.id)) return;
-    if (it) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it, false, e.data.ring || 1); } // 다시 알림이면 한 번 더 울립니다
+    // 앱이 뒤에 숨어 있을 때 온 알림은 휴대폰 알림이 울렸으므로 앱은 나중에 열려도 다시 울리지 않습니다
+    if (it) { rungFor[it.id] = it.last_fired_at || null; showAlarm(it, document.hidden, e.data.ring || 1); } // 다시 알림이면 한 번 더 울립니다
     else ringRow();
   });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && user) { loadAll().then(() => { render(); checkDue(); }); } });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) return; openedAt = Date.now(); if (user) { loadAll().then(() => { render(); checkDue(); }); } });
 }
 boot();
